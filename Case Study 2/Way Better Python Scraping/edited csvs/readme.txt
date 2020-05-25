@@ -1,0 +1,1 @@
+note, these csv files have the last column cleared, because the state name of the hometown field was messing up import/export. Could write around that with a concatenate field in python for the last column, but because it's not a part of the analysis for case study 2, i'm going to be lazy and just chop it off

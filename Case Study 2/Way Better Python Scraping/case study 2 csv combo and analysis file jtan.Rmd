@@ -1,0 +1,72 @@
+---
+title: "csv year combo"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+```{r}
+#data1999 = read.csv2('D:/Code/QTW Case Study 2/edited csvs/soup.1999.csv', sep = ',')
+#data2000 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2000.csv', sep = ',')
+#data2001 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2001.csv', sep = ',')
+#data2002 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2002.csv', sep = ',')
+#data2003 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2003.csv', sep = ',')
+#data2004 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2004.csv', sep = ',')
+#data2005 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2005.csv', sep = ',')
+#data2006 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2006.csv', sep = ',')
+#data2007 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2007.csv', sep = ',')
+#data2008 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2008.csv', sep = ',')
+#data2009 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2009.csv', sep = ',')
+#data2010 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2010.csv', sep = ',')
+#data2011 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2011.csv', sep = ',')
+#data2012 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2012.csv', sep = ',')
+```
+##Merging python output
+```{r}
+#data99_to_12 <- rbind(data1999, data2000, data2001, data2002, data2003, data2004, data2005, data2006, data2007, data2008, data2009, data2010, data2011, data2012)
+```
+
+```{r}
+#export as csv
+#write.csv(data99_to_12, "D:/Code/QTW Case Study 2/12yearsdata.csv", row.names = TRUE)
+```
+
+#a bit more cleaning to prep for analysis
+```{r}
+#function to turn 1999 10m into date, 1999, column 2 'Race'
+year_ex <- function(x){
+  x <- as.integer(substr(x, 1, 4))
+  return(x)
+}
+```
+
+```{r}
+data = read.csv('D:/Code/QTW Case Study 2/12yearsdata.csv', sep = ',')
+names(data) = c('Index', 'Race', 'Name', 'Age', 'Time', 'Pace', 'Pis.Tis', 'Division', 'PiD.TiD', 'Hometown')
+data$Year <- lapply(data$Race, year_ex)
+```
+
+```{r}
+#isolate desired columns, year, age, pace, maybe hometown
+trim_data <- data[, c(11, 4, 6, 10)]
+```
+
+```{r}
+head(trim_data)
+```
+
+weirdness from that year display aside, we're ready for analysis now!
+
+
+
+
+
+
+
+
+
+
