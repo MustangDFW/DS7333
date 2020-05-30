@@ -1,0 +1,191 @@
+---
+title: "csv year combo"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(knitr)
+library(kableExtra)
+
+library(changepoint)
+```
+
+```{r}
+#data1999 = read.csv2('D:/Code/QTW Case Study 2/edited csvs/soup.1999.csv', sep = ',')
+#data2000 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2000.csv', sep = ',')
+#data2001 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2001.csv', sep = ',')
+#data2002 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2002.csv', sep = ',')
+#data2003 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2003.csv', sep = ',')
+#data2004 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2004.csv', sep = ',')
+#data2005 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2005.csv', sep = ',')
+#data2006 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2006.csv', sep = ',')
+#data2007 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2007.csv', sep = ',')
+#data2008 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2008.csv', sep = ',')
+#data2009 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2009.csv', sep = ',')
+#data2010 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2010.csv', sep = ',')
+#data2011 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2011.csv', sep = ',')
+#data2012 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2012.csv', sep = ',')
+```
+##Merging python output
+```{r}
+#data99_to_12 <- rbind(data1999, data2000, data2001, data2002, data2003, data2004, data2005, data2006, data2007, data2008, data2009, data2010, data2011, data2012)
+```
+
+```{r}
+#export as csv
+#write.csv(data99_to_12, "D:/Code/QTW Case Study 2/12yearsdata.csv", row.names = TRUE)
+```
+
+#a bit more cleaning to prep for analysis
+```{r}
+#function to turn 1999 10m into date, 1999, column 2 'Race'
+year_ex <- function(x){
+  x <- as.integer(substr(x, 1, 4))
+  return(x)
+}
+```
+
+```{r}
+data = read.csv('D:/Code/QTW Case Study 2/12yearsdata.csv', sep = ',')
+names(data) = c('Index', 'Race', 'Name', 'Age', 'Time', 'Pace', 'Pis.Tis', 'Division', 'PiD.TiD', 'Hometown')
+data$Year <- lapply(data$Race, year_ex)
+```
+
+#analysis of age distribution across female runners from years 1999-2012
+
+```{r}
+#isolate desired columns, year, age, pace, maybe hometown
+trim_data <- data[, c(11, 4, 6, 10)]
+names(trim_data) <- c('Year', 'Age', 'Pace', 'Hometown')
+#whoops all the ages are string factors
+#also needed to remove the not reported/NA rows to convert ages to numeric
+trim_data <- trim_data[-(which(trim_data$Age == 'NR')), ]
+trim_data <- trim_data[-(which(is.na(trim_data$Age))), ]
+trim_data$Age <- as.numeric(as.character(trim_data$Age))
+```
+
+```{r, warning = FALSE}
+#bucket mean, median, mode age per year
+#y1999 <- trim_data[which(trim_data$Year == 1999),]
+yrange <-seq(1999, 2012, 1)
+#df.list <- list()
+#summary_statistics <- data.frame(year = factor(), mean_age = numeric() , median_age = numeric() , min_age = numeric(), max_age <- numeric())
+#names(summary_statistics) <- c('year', 'mean_age', 'median_age', 'min_age', 'max_age') #not sure why the column names default to extra ellipses
+mean_age <- vector()
+median_age <- vector()
+min_age <- vector()
+max_age <- vector()
+pcount <- vector()
+
+t_mean_age <- vector()  #for top 50 participants
+t_med_age <- vector()
+
+for(i in yrange){
+  bucketname <- paste('y', i, sep = '')
+  bucketrange <- trim_data[which(trim_data$Year == i),]
+  
+  bmean <- mean(bucketrange$Age) #get summary statistics 
+  mean_age <- append(mean_age, bmean)
+  #print(bmean)
+  bmedian <- median(bucketrange$Age)
+  median_age <- append(median_age, bmedian)
+  bmin <- min(bucketrange$Age)
+  min_age <- append(min_age, bmin)
+  bmax <- max(bucketrange$Age)
+  max_age <- append(max_age, bmax)
+  bcount <- length(bucketrange$Age)
+  pcount <- append(pcount, bcount)
+
+  p_mean_age <- append(t_mean_age, mean(bucketrange$Age[1:(length(bucketrange$Age)*.01)])) #stats for the top 5% of finishers
+  p_med_age <- append(t_med_age, median(bucketrange$Age[1:(length(bucketrange$Age)*.01)]))
+  
+  t_mean_age <- append(t_mean_age, mean(bucketrange$Age[1:20])) #stats for the top 20 finishers
+  t_med_age <- append(t_med_age, median(bucketrange$Age[1:20]))
+  
+  assign(bucketname, bucketrange) #create dataframes per year of trim_data
+  #df.list <- append(df.list, assign(bucketname, bucketrange))
+}
+```
+
+```{r}
+#check for NAs
+paste('rows = ', length(y1999$Year))
+paste('rows with no NA = ', length(y1999$Year[complete.cases(y1999$Year)]))
+```
+
+```{r}
+sstats <- data.frame(year = seq(1999, 2012, 1))
+sstats$c1 <- mean_age
+sstats$c2 <- median_age
+sstats$c3 <- min_age
+sstats$c4 <- max_age
+sstats$c5 <- pcount
+sstats$c6 <- p_mean_age
+sstats$c7 <- p_med_age
+sstats$c8 <- t_mean_age
+sstats$c9 <- t_med_age
+names(sstats) <- c("Race Year", 'Mean Age', 'Median Age', 'Min Age', 'Max Age', 'Participant count', "1% Mean Age", "1% Median Age", "Top 20 Mean Age", 'Top 20 Median Age')
+
+```
+
+```{r}
+knitr::kable(sstats, format = 'markdown', digits = 2, align = 'c', caption = "Summary Statistics for Women's Races 1999 - 2012")
+```
+
+```{r}
+v0 <- ggplot() +
+  geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`Mean Age`, col = 'Mean Age'))+
+  geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`Median Age`, col = 'Median Age'))+
+  #geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`Min Age`, col = 'Min Age'))+
+  #geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`Max Age`, col = 'Max Age'))+
+  geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`1% Mean Age`, col = 'Top 1% Mean Age'))+
+  geom_line(data = sstats, aes(x = sstats$'Race Year', y = sstats$`1% Median Age`, col = 'Top 1% Median Age'))+
+  #labs(title = "Summary Statistics for Women's Races 1999 - 2012", xlab = 'Year', ylab = 'Age')
+  ggtitle("Summary Statistics for Women's Races 1999 - 2012") + xlab('Year') + ylab('Age') + labs(col = 'Statistics') +
+  theme_bw(base_size = 11, base_family = '',base_line_size = 1, base_rect_size = 1)
+
+v0
+```
+Median age is consistently lower than the mean, indicating that the true distribution of female runners likely skews left towards younger runners, with a long tail of impressively dedicated older runners influencing the mean. Mean and median age continue to trend downwards until around 2009, when the number of female participants begins to exceed 8000 per year. This may indicate that rising popularity in running as an activity in DC metropolitan area or the D.C. Cherry Blossom Race as an event, which could have attracted significantly more older participants than before. 
+Mean and median ages support intution that the best performing participants are younger than the average participant, but appears to bottom out at 26 years old. 
+```{r}
+#changepoints analysis
+
+par(mfrow = c(2, 1))
+v1 <- as.ts(as.integer(sstats$`Mean Age`))
+
+v1.pelt <- cpt.meanvar(v1, test.stat = 'Poisson', method = "PELT")
+plot(v1.pelt, main = 'PELT changes in variance for female runners')
+cpts.ts(v1.pelt)
+
+v1.bs <- cpt.meanvar(v1, test.stat = 'Poisson', method = 'BinSeg')
+plot(v1.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance for female runners')
+cpts.ts(v1.bs)
+
+v1.2 <- as.ts(as.integer(sstats$`1% Mean Age`))
+
+v1.2.pelt <- cpt.meanvar(v1.2, test.stat = 'Poisson', method = "PELT")
+plot(v1.2.pelt, main = 'PELT changes in variance for top 1% female runners')
+cpts.ts(v1.2.pelt)
+
+v1.2.bs <- cpt.meanvar(v1, test.stat = 'Poisson', method = 'BinSeg')
+plot(v1.2.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance for top 1% female runners')
+cpts.ts(v1.2.bs)
+```
+
+Changepoint analysis shows no significant differenes in mean variance over the 14 races, though small number of datapoints may confound accuracy. The shifts in mean age range from 35 to 33, indicating that although there may be outliers that skew younger, particularly in the fastest runners, the average age of all participants in the race is fairly steady and has not changed significantly over the years. This can be attributed to the vastly increased participation rates of each race over the years, 1999 only had 2000 participants, where 2012 had almost 10,000. Assuming that the number of elite athletes is relatively stable, the majority of those 8000 new runners who did not participate in the race 12 years ago are around 33 years old or slightly higher. This could be evidence of the increased popularity of running as a leisure/fitness activity for non-professional women during this timeframe. 
+The top 1% finishers over all the races also doesn't seem to significantly change in variance over 14 years, indicating that while the average finisher in the 99th percentile is younger than the rest of the runners, she is consistently only 4-5 years younger. Whether this represents the current optimal intersection of age and performance for female runners in events of this duration or if the increasing popularity of running is keeping the average age up despite top finishers getting younger is something further studies could investigate. 
+
+```{r}
+#visualization of age per year
+v2 <- ggplot() +
+  geom_boxplot(data = trim_data, aes(x = Year, y = mean(Age)))
+v2
+```
+
+
+
