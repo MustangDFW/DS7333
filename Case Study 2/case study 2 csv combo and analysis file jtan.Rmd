@@ -12,6 +12,8 @@ library(knitr)
 library(kableExtra)
 
 library(changepoint)
+
+library(colorspace) #for hcl/hsl palettes
 ```
 
 ```{r}
@@ -181,11 +183,20 @@ Changepoint analysis shows no significant differenes in mean variance over the 1
 The top 1% finishers over all the races also doesn't seem to significantly change in variance over 14 years, indicating that while the average finisher in the 99th percentile is younger than the rest of the runners, she is consistently only 4-5 years younger. Whether this represents the current optimal intersection of age and performance for female runners in events of this duration or if the increasing popularity of running is keeping the average age up despite top finishers getting younger is something further studies could investigate. 
 
 ```{r}
-#visualization of age per year
-v2 <- ggplot() +
-  geom_boxplot(data = trim_data, aes(x = Year, y = mean(Age)))
+
+#visualization of age distribution per year
+v2 <- ggplot(data = trim_data, aes(x = as.character(Year), y = Age, fill = as.character(Year))) +
+  geom_boxplot()+
+  geom_jitter(color = 'grey', size = 0.1, alpha = 0.05)+
+  theme(legend.position = 'none', plot.title = element_text(size = 14))+
+  ggtitle("Age Distribution by Year") + xlab('Year') +
+  scale_color_manual(values = diverging_hcl(14, palette = 'Tropic')) #colors don't show up??
 v2
 ```
 
+```{r}
+custom <- diverge_hcl(20, h=c(-225,277), c=80, l=c(80,25))
+
+```
 
 
