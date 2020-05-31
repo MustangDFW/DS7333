@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+# required libraries for this notebook
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# In[2]:
+
+
+# Reproducibility, we're providing github URL to CSV file as well
+# https://raw.githubusercontent.com/MustangDFW/DS7333/master/Case%20Study%202/Way%20Better%20Python%20Scraping/12yearsdata.csv
+running = pd.read_csv('https://raw.githubusercontent.com/MustangDFW/DS7333/master/Case%20Study%202/Way%20Better%20Python%20Scraping/12yearsdata.csv')
+
+
+# In[3]:
+
+
+# running.info()
+running[['Race','Name','Age','Time','Pace','Division','Hometown']].info(verbose = True)
+
+
+# In[4]:
+
+
+pd.DataFrame(running.Age.value_counts())
+
+
+# In[5]:
+
+
+#pd.DataFrame(running.Time.value_counts())
+
+
+# In[6]:
+
+
+pd.DataFrame(running.Division.value_counts())
+
+
+# In[7]:
+
+
+#pd.DataFrame(running.Hometown.value_counts())
+
+
+# In[8]:
+
+
+#Distribution of Age Category
+sns.factorplot("Age", data=running, aspect=2,
+                       kind="count",order = running['Age'].value_counts().index)
+plt.show()
+
+
+# In[9]:
+
+
+running[['Race','Name','Age','Time','Pace','Division','Hometown']].describe()
+
+
+# In[ ]:
+
+
+# visualize summary statistics on attributes
+#running.boxplot(column=['Race','Name','Age','Time','Pace','Division','Hometown'], figsize=(8,8))
+
+#plt.show()
+
+
+# In[10]:
+
+
+# Here we will run a boxplot to show Year by Age
+running.boxplot(column='Year', by='Age', figsize=(8,8))
+plt.show()
+
+
+# In[ ]:
+
+
+
+
