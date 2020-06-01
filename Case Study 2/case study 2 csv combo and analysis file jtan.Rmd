@@ -193,10 +193,45 @@ v2 <- ggplot(data = trim_data, aes(x = as.character(Year), y = Age, fill = as.ch
   scale_color_manual(values = diverging_hcl(14, palette = 'Tropic')) #colors don't show up??
 v2
 ```
-
 ```{r}
-custom <- diverge_hcl(20, h=c(-225,277), c=80, l=c(80,25))
-
+#age_by_individual
+indage <- as.data.frame(table((trim_data$Age)))
+indage <- indage[seq(dim(indage)[1], 1),]
+head(indage)
 ```
 
+```{r}
+#v3
+v3 <- ggplot() + 
+  geom_bar(data = indage, aes(x = as.integer(Var1), y = Freq, fill = Freq), stat = 'identity', width = .8, position = position_dodge(width = 6)) +
+  #coord_flip() +
+  labs(title= 'Female Age Distribution', subtitle = 'Washington D.C. Cherry Blossom 10 Mile Run') +
+  xlab('Reported Age (Years)') + ylab('Frequency') +
+  scale_x_continuous(breaks = seq(0, 100, 5))  +
+  theme(aspect.ratio = 3/13, axis.text.x = element_text(vjust = -.5, size = 9), legend.position = 'none') +
+  scale_fill_gradient2(low = 'white', mid = 'maroon', high = 'turquoise4')
+
+show(v3)
+```
+
+
+```{r}
+#v3.2
+
+
+v3.2 <- ggplot() + 
+  geom_bar(data = trim_data, aes(x = Age, fill = Year),  width = .8, position = position_dodge(width = 6)) +
+  #coord_flip() +
+  labs(title= 'Female Age Distribution', subtitle = 'Washington D.C. Cherry Blossom 10 Mile Run') +
+  xlab('Reported Age (Years)') + ylab('Frequency') +
+  #scale_x_continuous(breaks = seq(0, 100, 5))  +
+  theme(aspect.ratio = 3/13, axis.text.x = element_text(vjust = -.5, size = 9), legend.position = 'none') 
+  scale_fill_manual(values = c14)
+
+show(v3.2)
+```
+
+```{r}
+c14 <- c('seashell', 'deepskyblue', 'deeppink', 'chocolat4', 'chartruse4', 'violet', 'darksalmon', 'steelblue', 'purple', 'goldenrod4', 'firebrick1', 'cyan4', 'forestgreen', 'lightcoral')
+```
 
