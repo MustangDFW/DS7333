@@ -17,20 +17,20 @@ library(colorspace) #for hcl/hsl palettes
 ```
 
 ```{r}
-#data1999 = read.csv2('D:/Code/QTW Case Study 2/edited csvs/soup.1999.csv', sep = ',')
-#data2000 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2000.csv', sep = ',')
-#data2001 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2001.csv', sep = ',')
-#data2002 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2002.csv', sep = ',')
-#data2003 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2003.csv', sep = ',')
-#data2004 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2004.csv', sep = ',')
-#data2005 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2005.csv', sep = ',')
-#data2006 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2006.csv', sep = ',')
-#data2007 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2007.csv', sep = ',')
-#data2008 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2008.csv', sep = ',')
-#data2009 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2009.csv', sep = ',')
-#data2010 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2010.csv', sep = ',')
-#data2011 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2011.csv', sep = ',')
-#data2012 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2012.csv', sep = ',')
+data1999 = read.csv2('D:/Code/QTW Case Study 2/edited csvs/soup.1999.csv', sep = ',')
+data2000 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2000.csv', sep = ',')
+data2001 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2001.csv', sep = ',')
+data2002 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2002.csv', sep = ',')
+data2003 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2003.csv', sep = ',')
+data2004 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2004.csv', sep = ',')
+data2005 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2005.csv', sep = ',')
+data2006 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2006.csv', sep = ',')
+data2007 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2007.csv', sep = ',')
+data2008 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2008.csv', sep = ',')
+data2009 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2009.csv', sep = ',')
+data2010 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2010.csv', sep = ',')
+data2011 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2011.csv', sep = ',')
+data2012 <- read.csv('D:/Code/QTW Case Study 2/edited csvs/soup.2012.csv', sep = ',')
 ```
 ##Merging python output
 ```{r}
