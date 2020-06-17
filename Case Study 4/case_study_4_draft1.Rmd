@@ -66,10 +66,15 @@ plotts.sample.wge(fdata$total_patients)
 lags are highly correlated, strong upwards trend with evidence of yearly seasonality, spikes approximately every 50 weeks, once a year. For a good ARIMA fit, the entirety of data is nonstationary. We need to identify a relatively stable section of the data to focus an arima on. 
 
 reasons for upwards trend in influenza diagnoses? - 
+
  - increased medical coverage/access to doctors
+ 
  - increased test accuracy/knowledge of symptoms 
+ 
  - data set doesn't specify which strain of flu this is, could be a new strain taking up respitory real estate from an older one - possible
- - increased urbanization/chances for virus to spread 
+ 
+ - increased urbanization/chances for viruses to spread 
+ 
  - the slow erosion of real human resistance to continuously adapting viral evolution/more people actually geting flu than before - unlikely
 
 
