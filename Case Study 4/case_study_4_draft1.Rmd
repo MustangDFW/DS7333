@@ -1,6 +1,8 @@
 ---
 title: "Case Study 3"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 Lance Dacy, Reanan McDaniel, Shawn Jung, Jonathan Tan
@@ -61,7 +63,7 @@ head(fdata)
 EDA - use tswge package to look at key attributes of a time series. plotts.sample.wge shows a realization of the time series, ACF, peridogram, and spectral density analysis
 ```{r}
 #wrap objects in invisible() to hide the long console output and leave only the graph
-plotts.sample.wge(fdata$total_patients)
+invisible(plotts.sample.wge(fdata$total_patients))
 ```
 lags are highly correlated, strong upwards trend with evidence of yearly seasonality, spikes approximately every 50 weeks, once a year. For a good ARIMA fit, the entirety of data is nonstationary. We need to identify a relatively stable section of the data to focus an arima on. 
 
