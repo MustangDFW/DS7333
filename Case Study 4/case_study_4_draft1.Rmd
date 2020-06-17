@@ -1,0 +1,277 @@
+---
+title: "Case Study 3"
+output: html_notebook
+---
+
+Lance Dacy, Reanan McDaniel, Shawn Jung, Jonathan Tan
+
+```{r}
+#analysis packages
+library(tswge)
+library(changepoint)
+library(tseries)
+
+#data manipulation
+library(dplyr)
+library(lubridate)
+library(tibbletime)
+
+#visualization
+library(ggplot2)
+library(cowplot)
+library(kableExtra)
+
+#data source
+library(cdcfluview)
+```
+
+import data from cdc flu
+```{r}
+original_data <- ilinet(region = 'national',  years = seq(1997, 2018, 1))
+head(original_data)
+```
+ 
+ #simple series
+ 1997 is incomplete, so lets stick to 1998-2018 (trim 1997 data) looking at total patients only
+also let's convert year and week into date format
+
+note, week 53 is usually the last less than 6 days of that year, either rolls over into the next year, overlapping with the next week 1, or an update of those last less than 6 days. either way, can justify dropping all the 53rd weeks, for the sake of calendrial neatness and to avoid overlapping numbers
+```{r}
+fdata <- original_data[, c('year', 'week', 'total_patients')] %>% filter(year %in% (1998:2018))
+fdata <- fdata %>% filter(week %in% (1:52))
+
+#year and week to date conversion, using as.Date formatting, %U for week (1:53) %u for day of week (1 is monday)
+#as.Date('1998011', '%Y%U%u') #sprintf is to make sure the week input stays 2 digits long 
+
+temp_date = vector() #storage vector
+
+for(i in 1:nrow(fdata)){
+  x <- as.Date(paste(as.character(fdata$year[i]), sprintf('%02d', fdata$week[i]), '1'), '%Y%U%u')
+  #x <- fdata$year[i] %>% as.character() %>% paste(sprintf('%02d', fdata$week[i]), '1') %>% as.Date('%Y%U%u') #pipe version is a little easier to read? 
+  #print(paste(i, fdata$year[i], fdata$week[i], x))
+  temp_date[i] <- as.character(x)
+}
+
+fdata['date'] <- as.Date(temp_date)
+#y <- as_tbl_time(fdata, index = date)
+
+head(fdata)
+```
+
+EDA - use tswge package to look at key attributes of a time series. plotts.sample.wge shows a realization of the time series, ACF, peridogram, and spectral density analysis
+```{r}
+#wrap objects in invisible() to hide the long console output and leave only the graph
+plotts.sample.wge(fdata$total_patients)
+```
+lags are highly correlated, strong upwards trend with evidence of yearly seasonality, spikes approximately every 50 weeks, once a year. For a good ARIMA fit, the entirety of data is nonstationary. We need to identify a relatively stable section of the data to focus an arima on. 
+
+reasons for upwards trend in influenza diagnoses? - 
+ - increased medical coverage/access to doctors
+ - increased test accuracy/knowledge of symptoms 
+ - data set doesn't specify which strain of flu this is, could be a new strain taking up respitory real estate from an older one - possible
+ - increased urbanization/chances for virus to spread 
+ - the slow erosion of real human resistance to continuously adapting viral evolution/more people actually geting flu than before - unlikely
+
+
+changepoint analysis
+```{r}
+par(mfrow = c(2,1))
+
+v3 <- as.ts(fdata$total_patients)
+
+v3.pelt <- cpt.meanvar(v3, test.stat = 'Poisson', method = "PELT")
+plot(v3.pelt, main = 'PELT changes in variance')
+cpts.ts(v3.pelt)
+
+v3.bs <- cpt.meanvar(v3, test.stat = 'Poisson', method = 'BinSeg')
+plot(v3.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance')
+cpts.ts(v3.bs)
+```
+Changepoint analysis shows a stable time period between week 620 and 1050, or 2009 to 2017 ish (rows 573- 1040)
+(note, is there a way to pull out the exact mean variance continuties?)
+
+select total flu patient numbers from 2009-2017
+```{r}
+tdata <- fdata[573:1040, 3:4]
+head(tdata)
+```
+
+visualizations
+```{r}
+plotts.sample.wge(as.integer(tdata$total_patients))
+```
+now we still have a bit of seasonality, but much less wandering behavior, with tapering ACF indicating stationarity. 
+note, ARMA model requires stationarity
+
+stationarity test - augmented dicky fuller test
+```{r}
+adf.test(tdata$total_patients)
+```
+ok, looks stationary [the augmented dickey-fuller test looks at the linear trend of a time series to do complicated math stuff insert here later]
+
+```{r}
+pacf(tdata$total_patients)
+```
+quickly damping and oscliating PACF indicate strong autoregressive component
+
+quick look at how many AR and MA factors might be used to approximate the time series with a function
+```{r}
+aic5.wge(tdata$total_patients, p = 0:5, q = 0:5)
+aic5.wge(tdata$total_patients, p = 0:5, q = 0:5, type = 'bic')
+```
+we'll go with arma(1, 5) for now
+
+
+estimating coeffients for the ARMA model
+```{r}
+m1 = est.arma.wge(tdata$total_patients, p = 1, q = 5, factor = TRUE)
+m1$phi
+m1$theta
+```
+
+now we'll slot thos phis and thetas into a forecast of the data up to 2016, and compare it to the actual data from 2017
+```{r}
+weeks_compare = 52 #how many weeks to reserve for testing
+f1 <- tdata$total_patients[1:(nrow(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m1$phi, theta = m1$theta, n.ahead = weeks_compare)
+#MSE compare actual data to f1$f
+mse <- (tdata$total_patients[((nrow(tdata)-weeks_compare)+1):(nrow(tdata))] - f1$f)^2 %>% mean()
+paste('Mean Squared Error: ', mse)
+
+g1 <- ggplot(tdata)+
+  geom_line(aes(x = date, y = total_patients, color = 'black'), size = 0.5)+
+  geom_line(aes(x = date, y = c(rep(NA, nrow(tdata)-weeks_compare), f1$f), color = 'red'), size= 1) + 
+  scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted'))
+g1
+    
+```
+not great, clearly an arma(1, 5) doesn't fit the data well. let's expand AIC parameters
+
+
+```{r}
+aic5.wge(tdata$total_patients, p = 0:10, q = 0:5)
+aic5.wge(tdata$total_patients, p = 0:10, q = 0:5, type = 'bic')
+```
+
+let's try (7, 0) ARMA, no differences
+```{r}
+m2 = est.arma.wge(tdata$total_patients, p = 7, q = 0, factor = TRUE)
+m2$phi
+m2$theta
+
+weeks_compare = 26 #how many weeks to reserve for testing
+f2 <- tdata$total_patients[1:(nrow(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m2$phi, theta = m2$theta, n.ahead = weeks_compare)
+
+mse <- (tdata$total_patients[((nrow(tdata)-weeks_compare)+1):(nrow(tdata))] - f2$f)^2 %>% mean()
+paste('Mean Squared Error: ', mse)
+
+g2 <- ggplot(tdata)+
+  geom_line(aes(x = date, y = total_patients, color = 'black'), size = 0.5)+
+  geom_line(aes(x = date, y = c(rep(NA, nrow(tdata)-weeks_compare), f2$f), color = 'red'), size= 1) + 
+  scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted'))
+g2
+```
+Better, but still not good. 
+
+use artrans to remove seasonality, take first difference of time series. 
+```{r}
+d1 <- artrans.wge(tdata$total_patients, phi.tr = 1)
+```
+
+now run the differenced data through the previous steps
+
+```{r}
+aic_results <- aic5.wge(d1, p = 0:10, q = 0:5)
+bic_results <- aic5.wge(d1, p = 0:10, q = 0:5, type = 'bic')
+```
+
+```{r}
+m3 = est.arma.wge(d1, p = aic_results[1, 1], q = aic_results[1, 2], factor = TRUE)
+m3$phi
+m3$theta
+
+diff_df <- data.frame(tdata$date[1:(nrow(tdata)-1)], d1)
+names(diff_df) <- c('date', 'total_patients')
+
+weeks_compare = 26 #how many weeks to reserve for testing
+f3 <- diff_df$total_patients[1:(nrow(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m2$phi, theta = m2$theta, d = 1, n.ahead = weeks_compare)
+
+mse <- (diff_df$total_patients[((nrow(diff_df)-weeks_compare)+1):(nrow(diff_df))] - f3$f)^2 %>% mean()
+paste('Mean Squared Error: ', mse)
+
+g3 <- ggplot(diff_df)+
+  geom_line(aes(x = date, y = total_patients, color = 'black'), size = 0.5)+
+  geom_line(aes(x = date, y = c(rep(NA, nrow(diff_df)-weeks_compare), f3$f), color = 'red'), size= 1) + 
+  scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted'))
+g3
+```
+still not great
+
+more tuning to do on pdq, then setup rolling ASE/other evaluation metric? cross validation to add too
+
+
+test rolling window ase below on model 2
+```{r}
+#rolling window ase thing test
+
+trainingSize = 52 #given (1) years of data, 
+horizon = 12 #predict the next 3 months
+stepSize = 12 #slide window over every 6weeks?
+ASEHolder = numeric()
+fHolder = matrix(nrow = 0, ncol = horizon) #create empty matrix to store forecast results, ncols = number of forecasts per iteration
+phis = m2$phi
+thetas = m2$theta
+s = 0
+d = 0
+c = 1
+for( i in seq(1, (length(tdata$total_patients)-(horizon+trainingSize)), stepSize))
+{
+  forecasts = fore.aruma.wge(tdata$total_patients[i:(i+trainingSize-1)],phi = phis, theta = thetas, s = s, d = d,n.ahead = horizon)
+  ASE = mean((tdata$total_patients[(i+trainingSize):(i+trainingSize+horizon-1)] - forecasts$f)^2)
+  ASEHolder[c] = ASE
+  fHolder <- rbind(fHolder, forecasts$f)
+  c = c+1
+}
+#names(fHolder) <- seq(1, nrow(fHolder), 1)
+#ASEHolder
+hist(ASEHolder)
+WindowedASE = mean(ASEHolder)
+
+summary(ASEHolder)
+WindowedASE
+```
+
+compare all forecasts to actual data
+```{r, warning = FALSE}
+#generate matrix that contains spaced out windowed data
+sfHolder = matrix(nrow = 0, ncol = length(tdata$total_patients))
+
+for(i in 1:dim(fHolder)[[1]]){
+  x <- c(rep(NA, stepSize*(i - 1)), fHolder[i, ],  rep(NA, (length(tdata$total_patients)-stepSize*i)) )
+  sfHolder <- rbind(sfHolder, x)
+}
+
+ggplot(tdata, aes(x = date, y = total_patients)) + geom_line() +
+  geom_line(aes(y = sfHolder[1, ]), color = 'red', size = 1) +
+  geom_line(aes(y = sfHolder[5, ]), color = 'blue', size = 1) +
+  geom_line(aes(y = sfHolder[12, ]), color = 'green', size = 1) +
+  geom_line(aes(y = sfHolder[18, ]), color = 'yellow', size = 1) +
+  geom_line(aes(y = sfHolder[25, ]), color = 'purple', size = 1) +
+  geom_line(aes(y = sfHolder[29, ]), color = 'steelblue', size = 1) +
+  geom_line(aes(y = sfHolder[34, ]), color = 'darkred', size = 1) 
+```
+Gets close to actual data, but could be better. 
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
