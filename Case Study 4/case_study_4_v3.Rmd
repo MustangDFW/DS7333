@@ -1,0 +1,234 @@
+---
+title: "case study 4 v3"
+output: html_notebook
+---
+
+
+Lance Dacy, Reanan McDaniel, Shawn Jung, Jonathan Tan
+
+```{r}
+#analysis packages
+library(tswge)
+library(changepoint)
+library(tseries)
+library(DataExplorer)
+library(nnfor)
+
+#data manipulation
+library(dplyr)
+library(lubridate)
+library(tibbletime)
+
+#visualization
+library(ggplot2)
+library(cowplot)
+library(kableExtra)
+
+#data source
+library(cdcfluview)
+```
+
+import data from... ??? https://apps.who.int/flumart/Default?ReportNo=12
+query below is SE Asia from 1995 to 2019
+```{r}
+raw_data  <- read.csv('D:/SMU/DS 7333 Quantify The World/FluNetInteractiveReport(SE_Asia_1995-2019).csv')
+```
+Column guide for WHO data csv columns
+SPEC_RECIEVED_NB - Specimens recieved by the WHO
+SPEC_PROCESSED_NB - specimens processed by the WHO
+AH1 - all A type influenza viruses categorized by subtype
+A(H1N1pdm09
+AH3
+AH5
+ANOTSUBTYPED
+INF(A) - total of all influenza A viruses detected
+BYAMAGATA - B(Yamagata lineage) - various types of influenze B type viruses
+BVICTORIA - B(Victoria Lineage)
+BNOTDETERMINED
+INF_B - total influenze B viruses 
+ALL_INF - number of influenze positive viruses
+ALL_INF2 - number of influenze negative viruses
+TITLE - ili activity? most have no report as the column
+
+will have to look more into the details, but it looks like this dataset is recording the number of virus strains, not individual cases of that virus. specimens recieved/processed usually matches up with INF + or -, indicating that those specimens were all tested and sorted into either yes, it was an influenza virus, or no, it was not. 
+
+We'll pick S asia, India for total influenza cases
+
+```{r}
+S_Asia <- raw_data[which(raw_data$FLUREGION == 'Southern Asia'), ] #select rows from SE asia
+tlist <- S_Asia[complete.cases(S_Asia$ALL_INF), ] #select only rows that aren't missing data in the all_inf column
+t_ind <- tlist[which(tlist['ï..Country'] == 'India'), ]
+t_ind <- t_ind[which(t_ind$Year == 2017| t_ind$Year == 2018 | t_ind$Year == 2019), ] #select 3 years
+ttime = t_ind$SDATE %>% as.Date("%m/%d/%Y") #store the timeline as date object vector
+#it looks like all the weeks fall on the same SDATE's, so it should be safe to use the same date vector for different countries.
+
+ggplot(t_ind) +
+  geom_line(aes(x = ttime, y = ALL_INF, col = 'Total Influenza Cases'))+
+  #geom_line(aes(x = ttime, y = AH1, col = 'AH1'))+
+  #geom_line(aes(x = ttime, y = AH1N12009, col = '2009 Swine Flu'))+
+  #geom_line(aes(x = ttime, y = AH3, col = 'AH3'))+
+  #geom_line(aes(x = ttime, y = AH5, col = 'AH5'))+
+  #geom_line(aes(x = ttime, y = ANOTSUBTYPED, col = 'Untyped Inf A'))+
+  geom_line(aes(x = ttime, y = INF_A, col = 'total type A'))+
+  #geom_line(aes(x = ttime, y = BYAMAGATA, col = 'Yamagata STRAIN B'))+
+  #geom_line(aes(x = ttime, y = BVICTORIA, col = 'Victoria Strain B'))+
+  #geom_line(aes(x = ttime, y = BNOTDETERMINED, col = 'Untyped Inf B'))+
+  geom_line(aes(x = ttime, y = INF_B, col = 'total type B')) +
+  scale_y_continuous()
+```
+
+diagnostics, stationarity
+```{r}
+tdata = t_ind$ALL_INF
+#wrap objects in invisible() to hide the long console output and leave only the graph
+invisible(plotts.sample.wge(tdata))
+#stationairity
+adf.test(tdata)
+pacf(tdata)
+#changepoint
+par(mfrow = c(2,1))
+v2 <- tdata
+v2.pelt <- cpt.meanvar(v2, test.stat = 'Poisson', method = "PELT")
+plot(v2.pelt, main = 'PELT changes in variance')
+cpts.ts(v2.pelt)
+
+v2.bs <- cpt.meanvar(v2, test.stat = 'Poisson', method = 'BinSeg')
+plot(v2.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance')
+cpts.ts(v2.bs)
+```
+augmented dicky fuller test yields -4.97, less than p-value of 0.01; reject null; insufficient evidency to claim time series is NOT stationary
+basically it is stationary
+
+
+feed into modeling block 
+```{r}
+#model fitting with tdata
+pspan = 0:10 #range of values to look for possible p and q coefficients for AR and MA
+qspan = 0:8
+difference = 0
+aic_results <- aic5.wge(tdata, p = pspan, q = qspan)
+bic_results <- aic5.wge(tdata, p = pspan, q = qspan, type = 'bic')
+aic_results
+bic_results
+
+m1 = est.arma.wge(tdata, p = aic_results[1, 1], q = aic_results[1, 2], factor = TRUE) #feed top AIC or BIC into arma estimation to generate coefficients
+m1$phi
+m1$theta
+
+#simple single forecast and test
+weeks_compare = 24 #how many weeks to reserve for testing : 6months 
+f1 <- tdata[1:(length(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m1$phi, theta = m1$theta, d = 0, n.ahead = weeks_compare)
+mse <- mean((tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] - f1$f)^2)
+paste('Mean Squared Error: ', mse)
+#additional metrics
+a_metrics <- accuracy(f1$f, tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] )
+
+#change x and y line names to match whatever dataframe you've stored the time series in
+timeFrame <- data.frame(date = ttime, inf_cases = tdata)
+g3 <- ggplot(timeFrame)+
+  geom_line(aes(x = date, y = tdata, color = 'black'), size = 0.5)+
+  geom_line(aes(x = date, y = c(rep(NA, length(tdata)-weeks_compare), f1$f), color = 'red'), size= 1) + 
+  scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted')) +
+  ggtitle(paste('ARIMA (',aic_results[1, 1],',',aic_results[1, 2],',',difference,')', 'Forecast of ', weeks_compare, ' weeks'), subtitle = paste('Mean Squared Error = ', mse))
+g3
+```
+
+```{r}
+#updated with step size,how much the "window" moves per interval 
+#rolling window ase: apply model predictions to small segments of the given data and aggregate metrics
+trainingSize = 24
+horizon = 4
+step_size = 8
+n_windows = round((length(tdata)-(trainingSize + horizon))/step_size) #number of whole windows of training size + horizon that will fit into the given data, divided by step size
+ASEHolder = numeric()
+
+fcastHolder = matrix(nrow = n_windows, ncol = horizon) #create matrix that has the number of rows and columns corresponding to number of windows and length of forecast interval
+fUpperHolder = matrix(nrow = n_windows, ncol = horizon) #same for upper and lower intervals
+fLowerHolder = matrix(nrow = n_windows, ncol = horizon)
+phis = m1$phi
+thetas = m1$theta
+s = 0
+d = 0
+
+for( i in 1:n_windows) #how many "windows" can fit into the total length of time, rounding down
+{
+  t_start = 1+(step_size*(i-1)) #starting point for each window's training data
+  t_end = trainingSize + (step_size*(i-1)) #endpoint
+  forecasts = fore.aruma.wge(tdata[t_start:t_end],phi = phis, theta = thetas, s = s, d = d, n.ahead = horizon)
+  
+  ASE = mean((tdata[(t_end + 1):(t_end+horizon)] - forecasts$f)^2)
+  ASEHolder[i] = ASE
+  fcastHolder[i, ] <- forecasts$f
+  fUpperHolder[i, ] <- forecasts$ul
+  fLowerHolder[i, ] <- forecasts$ll
+  #print(paste(t_start, t_end))
+}
+
+ASEHolder
+WindowedASE = mean(ASEHolder)
+hist(ASEHolder, main = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+
+summary(ASEHolder)
+print(paste("Mean ASE across ", n_windows, ' moving windows: ', WindowedASE))
+```
+
+```{r}
+#function to space out forecasts with NAs for plotting
+fspacer <- function(fcasts){
+  cast_frame = 0
+  cast_frame = matrix(nrow = n_windows, ncol = length(tdata)) #empty matrix to hold spaced out forecasts
+  for(i in 1:n_windows)
+    {
+    #print(i)
+    before_block <- rep(NA, (trainingSize + (step_size*(i-1))))
+    after_block <- c(rep(NA, (length(tdata) - length(c(rep(NA, (trainingSize + step_size*(i-1))))) - horizon)))
+    #print(paste(length(before_block), length(after_block)))
+    #print(length(c(before_block, fcasts[i, ], after_block)))
+    cast_frame[i, ] <- c(before_block, fcasts[i, ], after_block)
+    #print(cast_frame[i, ])
+    }
+  return(cast_frame)
+}
+f_spaced <- fspacer(fcastHolder)
+```
+
+```{r}
+#create categorical dataframe to store windowed predictions
+fframe <- list()
+for(i in 1:n_windows){
+  #name = paste0('df', i)
+  lname = paste0('w', i)
+  #assign(name, data.frame(date = ttime, pred = f_spaced[i, ]))
+  tmp <- data.frame(date = ttime, pred = f_spaced[i, ])
+  fframe[[lname]] <- tmp
+  }
+f_df <- cbind(cat= rep(names(fframe), sapply(fframe, NROW)), do.call(rbind, fframe)) #arrange data with category by prediction window
+o_df <- data.frame(cat = rep('original', length(tdata)), date = ttime, pred = tdata) #add actual data as rbind
+f_df <- rbind(f_df, o_df)
+
+ggplot(f_df, aes(date,pred, color= cat)) + geom_line() +
+  ggtitle("Total Influenza Test Cases: India 2017 - 2019", subtitle = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
