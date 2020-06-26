@@ -31,7 +31,7 @@ library(cdcfluview)
 import data from... ??? https://apps.who.int/flumart/Default?ReportNo=12
 query below is SE Asia from 1995 to 2019
 ```{r}
-raw_data  <- read.csv('D:/SMU/DS 7333 Quantify The World/FluNetInteractiveReport(SE_Asia_1995-2019).csv')
+raw_data  <- read.csv('D:/SMU/DS 7333 Quantify The World/FluNetInteractiveReport_SE_Asia_1995-2019.csv')
 ```
 Column guide for WHO data csv columns
 SPEC_RECIEVED_NB - Specimens recieved by the WHO
@@ -194,6 +194,7 @@ f_spaced <- fspacer(fcastHolder)
 
 ```{r}
 #create categorical dataframe to store windowed predictions
+f_spaced <- fspacer(fcastHolder)
 fframe <- list()
 for(i in 1:n_windows){
   #name = paste0('df', i)
@@ -208,27 +209,301 @@ f_df <- rbind(f_df, o_df)
 
 ggplot(f_df, aes(date,pred, color= cat)) + geom_line() +
   ggtitle("Total Influenza Test Cases: India 2017 - 2019", subtitle = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+```
 
+```{r}
+year_range = 1995:2019
+range_data = vector()
+for(j in year_range[1:5]){
+  range_data <- rbind(range_data, t_ind[which(t_ind$Year == j), ])
+}
 ```
 
 
+#iterable years
+```{r}
+#dataset generation
+S_Asia <- raw_data[which(raw_data$FLUREGION == 'Southern Asia'), ]
+t_ind <- S_Asia[which(S_Asia['ï..Country'] == 'India'), ] #leave na, convert to zero
+t_ind$ALL_INF[is.na(t_ind$ALL_INF)] <- 0
+
+year_range = 2019:1995 #call with year_range[1], ect
+n_years = 4 #this can be a user input type thing? starting from 2019, number of years to include in TS
+range_data = vector()
+
+for(j in 1:n_years){
+  range_data <- rbind(range_data, t_ind[which(t_ind$Year == year_range[j]), ])
+} #there we go, creates a df based on specified index years
+tdata <- rev(range_data$ALL_INF) #set primary ts to all influenza cases #IMPORTANT to reverse the data
+ttime <- rev(range_data$SDATE) %>% as.Date("%m/%d/%Y") %>% sort()#because it's in descending year from indexing scheme
+
+#### model diagnostics ####
+invisible(plotts.sample.wge(tdata)) #wrap objects in invisible() to hide the long console output and leave only the graph
+#stationarity testing
+adf.test(tdata)
+pacf(tdata)
+#changepoint
+par(mfrow = c(2,1))
+v2 <- tdata #changepoint visualization
+v2.pelt <- cpt.meanvar(v2, test.stat = 'Poisson', method = "PELT")
+plot(v2.pelt, main = 'PELT changes in variance')
+cpts.ts(v2.pelt)
+v2.bs <- cpt.meanvar(v2, test.stat = 'Poisson', method = 'BinSeg')
+plot(v2.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance')
+cpts.ts(v2.bs)
+#### end ####
+
+#### model fitting ####
+pspan = 0:5 #range of values to look for possible p and q coefficients for AR and MA
+qspan = 0:5
+difference = 0
+aic_results <- aic5.wge(tdata, p = pspan, q = qspan) #cut bic results
+aic_results
+m1 = est.arma.wge(tdata, p = aic_results[1, 1], q = aic_results[1, 2], factor = TRUE) #feed top AIC into arma estimation to generate coefficients
+m1$phi
+m1$theta
+#### end ####
 
 
+#### endpoint forcast ####
+#simple single forecast and test
+weeks_compare = 24 #how many weeks to reserve for testing : 6months 
+f1 <- tdata[1:(length(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m1$phi, theta = m1$theta, d = 0, n.ahead = weeks_compare)
+mse <- mean((tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] - f1$f)^2)
+paste('Mean Squared Error: ', mse)
+#additional metrics
+a_metrics <- accuracy(f1$f, tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] )
+
+#change x and y line names to match whatever dataframe you've stored the time series in
+timeFrame <- data.frame(date = ttime, inf_cases = tdata)
+g3 <- ggplot(timeFrame)+
+  geom_line(aes(x = date, y = tdata, color = 'black'), size = 0.5)+
+  geom_line(aes(x = date, y = c(rep(NA, (length(tdata)-weeks_compare)), f1$f), color = 'red'), size= 1) + 
+  scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted')) +
+  ggtitle(paste('ARIMA (',aic_results[1, 1],',',aic_results[1, 2],',',difference,')', 'Forecast of ', weeks_compare, ' weeks'), subtitle = paste('Mean Squared Error = ', mse))
+g3
+#### end ####
+
+#### rolling window ase and viz ####
+#rolling window ase: apply model predictions to small segments of the given data and aggregate metrics
+trainingSize = 24
+horizon = 4 #3months 
+step_size = 4 
+n_windows = round((length(tdata)-(trainingSize + horizon))/step_size) #number of whole windows of training size + horizon that will fit into the given data, divided by step size
+ASEHolder = numeric()
+
+fcastHolder = matrix(nrow = n_windows, ncol = horizon) #create matrix that has the number of rows and columns corresponding to number of windows and length of forecast interval
+fUpperHolder = matrix(nrow = n_windows, ncol = horizon) #same for upper and lower intervals
+fLowerHolder = matrix(nrow = n_windows, ncol = horizon)
+phis = m1$phi
+thetas = m1$theta
+s = 0
+d = 0
+for( i in 1:n_windows) #how many "windows" can fit into the total length of time, rounding down
+{
+  t_start = 1+(step_size*(i-1)) #starting point for each window's training data
+  t_end = trainingSize + (step_size*(i-1)) #endpoint
+  forecasts = fore.aruma.wge(tdata[t_start:t_end],phi = phis, theta = thetas, s = s, d = d, n.ahead = horizon, plot = FALSE)
+  ASE = mean((tdata[(t_end + 1):(t_end+horizon)] - forecasts$f)^2)
+  ASEHolder[i] = ASE
+  fcastHolder[i, ] <- forecasts$f
+  fUpperHolder[i, ] <- forecasts$ul
+  fLowerHolder[i, ] <- forecasts$ll
+}
+summary(ASEHolder)
+WindowedASE = mean(ASEHolder)
+hist(ASEHolder, main = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+#### end ####
+
+#### create categorical dataframe to store windowed predictions and visualize with ggplot ####
+f_spaced <- fspacer(fcastHolder)
+fframe <- list()
+for(i in 1:n_windows){
+  #name = paste0('df', i)
+  lname = paste0('w', i)
+  #assign(name, data.frame(date = ttime, pred = f_spaced[i, ]))
+  tmp <- data.frame(date = ttime, pred = f_spaced[i, ])
+  fframe[[lname]] <- tmp
+  }
+f_df <- cbind(cat= rep(names(fframe), sapply(fframe, NROW)), do.call(rbind, fframe)) #arrange data with category by prediction window
+o_df <- data.frame(cat = rep('original', length(tdata)), date = ttime, pred = tdata) #add actual data as rbind
+f_df <- rbind(f_df, o_df)
+
+ggplot(f_df, aes(date,pred, color= cat)) + geom_line() +
+  ggtitle(paste("Total Influenza Test Cases: India", year_range[1:n_years][n_years], ' - ', year_range[1:n_years][1]), subtitle = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+#### end ####
+```
 
 
+#determine optimal # of years for forecast with ASE
+```{r}
+#iterating on iterable year range
+#dataset generation
+S_Asia <- raw_data[which(raw_data$FLUREGION == 'Southern Asia'), ]
+t_ind <- S_Asia[which(S_Asia['ï..Country'] == 'India'), ] #leave na, convert to zero
+t_ind$ALL_INF[is.na(t_ind$ALL_INF)] <- 0
+year_range = 2019:1995 #call with year_range[1], ect
+
+meta_ep_ase = vector() #store the endpoint and rolling ase for each run of n years in the data
+meta_roll_ase = vector()
+meta_counter = 1
+
+for(i in 1:length(year_range)){
+  n_years = i #create dataset with 1 years data, 2 years, ect, ect
+  range_data = vector()
+  for(j in 1:n_years){
+    range_data <- rbind(range_data, t_ind[which(t_ind$Year == year_range[j]), ])
+    } #there we go, creates a df based on specified index years
+  tdata <- rev(range_data$ALL_INF) #set primary ts to all influenza cases #IMPORTANT to reverse the data
+  ttime <- rev(range_data$SDATE) %>% as.Date("%m/%d/%Y") %>% sort()#because it's in descending year from indexing scheme
+  
+  #### model diagnostics ####
+  invisible(plotts.sample.wge(tdata)) #wrap objects in invisible() to hide the long console output and leave only the grap
+  #stationarity testin
+  adf.test(tdata)
+  #pacf(tdata)
+  #changepoint
+  par(mfrow = c(2,1))
+  v2 <- tdata #changepoint visualization
+  v2.pelt <- cpt.meanvar(v2, test.stat = 'Poisson', method = "PELT")
+  plot(v2.pelt, main = 'PELT changes in variance')
+  cpts.ts(v2.pelt)
+  v2.bs <- cpt.meanvar(v2, test.stat = 'Poisson', method = 'BinSeg')
+  plot(v2.bs, cpt.width = 3, main = 'BinSeg changes in Mean Variance')
+  cpts.ts(v2.bs)
+  #### end ####
+
+  #### model fitting ####
+  pspan = 0:5 #range of values to look for possible p and q coefficients for AR and MA
+  qspan = 0:5
+  difference = 0
+  aic_results <- aic5.wge(tdata, p = pspan, q = qspan) #cut bic results
+  #aic_results
+  m1 = est.arma.wge(tdata, p = aic_results[1, 1], q = aic_results[1, 2], factor = TRUE) #feed top AIC into arma estimation to generate coefficients
+  m1$phi
+  m1$theta
+  #### end ####
+  
+  #### endpoint forcast ####
+  #simple single forecast and test
+  weeks_compare = 24 #how many weeks to reserve for testing : 6months 
+  f1 <- tdata[1:(length(tdata)-weeks_compare)] %>% fore.aruma.wge(phi = m1$phi, theta = m1$theta, d = 0, n.ahead = weeks_compare)
+  ase <- mean((tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] - f1$f)^2)
+  paste('Average Squared Error: ', ase)
+  #additional metrics
+  a_metrics <- accuracy(f1$f, tdata[((length(tdata)-weeks_compare)+1):(length(tdata))] )
+
+  #change x and y line names to match whatever dataframe you've stored the time series in
+  timeFrame <- data.frame(date = ttime, inf_cases = tdata)
+  g4.2 <- ggplot(timeFrame)+
+    geom_line(aes(x = date, y = tdata, color = 'black'), size = 0.5)+
+    geom_line(aes(x = date, y = c(rep(NA, (length(tdata)-weeks_compare)), f1$f), color = 'red'), size= 1) + 
+    scale_color_discrete(name = "total_patients", labels = c('actual', 'predicted')) +
+    ggtitle(paste('ARIMA (',aic_results[1, 1],',',aic_results[1, 2],',',difference,')', 'Forecast of ', weeks_compare, ' weeks'), subtitle = paste('Average Squared Error = ', ase))
+  g4.2
+  #### end ####
+
+  #### rolling window ase and viz ####
+  #rolling window ase: apply model predictions to small segments of the given data and aggregate metrics
+  trainingSize = 24
+  horizon = 4 #3months 
+  step_size = 4 
+  n_windows = round((length(tdata)-(trainingSize + horizon))/step_size) #number of whole windows of training size + horizon that will fit into the given data, divided by step size
+  ASEHolder = numeric()
+
+  fcastHolder = matrix(nrow = n_windows, ncol = horizon) #create matrix that has the number of rows and columns corresponding to number of windows and length of forecast interval
+  fUpperHolder = matrix(nrow = n_windows, ncol = horizon) #same for upper and lower intervals
+  fLowerHolder = matrix(nrow = n_windows, ncol = horizon)
+  phis = m1$phi
+  thetas = m1$theta
+  s = 0
+  d = 0
+  for( i in 1:n_windows) #how many "windows" can fit into the total length of time, rounding down
+    {
+    t_start = 1+(step_size*(i-1)) #starting point for each window's training data
+    t_end = trainingSize + (step_size*(i-1)) #endpoint
+    forecasts = fore.aruma.wge(tdata[t_start:t_end],phi = phis, theta = thetas, s = s, d = d, n.ahead = horizon, plot = FALSE)
+    ASE = mean((tdata[(t_end + 1):(t_end+horizon)] - forecasts$f)^2)
+    ASEHolder[i] = ASE
+    fcastHolder[i, ] <- forecasts$f
+    fUpperHolder[i, ] <- forecasts$ul
+    fLowerHolder[i, ] <- forecasts$ll
+    }
+  summary(ASEHolder)
+  WindowedASE = mean(ASEHolder)
+  hist(ASEHolder, main = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+  #### end ####
+
+  #### create categorical dataframe to store windowed predictions and visualize with ggplot ####
+  f_spaced <- fspacer(fcastHolder)
+  fframe <- list()
+  for(i in 1:n_windows){
+    lname = paste0('w', i)
+    tmp <- data.frame(date = ttime, pred = f_spaced[i, ])
+    fframe[[lname]] <- tmp
+    }
+  f_df <- cbind(cat= rep(names(fframe), sapply(fframe, NROW)), do.call(rbind, fframe)) #arrange data with category by prediction window
+  o_df <- data.frame(cat = rep('original', length(tdata)), date = ttime, pred = tdata) #add actual data as rbind
+  f_df <- rbind(f_df, o_df)
+  
+  g4.3 <- ggplot(f_df, aes(date,pred, color= cat)) + geom_line() +
+  ggtitle(paste("Total Influenza Test Cases: India", year_range[1:n_years][n_years], ' - ', year_range[1:n_years][1]), subtitle = paste("Mean ASE across [", n_windows, '] moving windows: ', WindowedASE))
+  g4.3
+  #### end ####
+  
+  meta_ep_ase[meta_counter] <- ase
+  meta_roll_ase[meta_counter] <- WindowedASE
+  meta_counter <- meta_counter+1
+  
+  }
+```
+hmm ggplots don't come through on the loop
+
+```{r}
+require(gridExtra)
+
+g5 <- ggplot() + geom_line(aes(x = 1:length(meta_ep_ase), y = meta_ep_ase)) +
+  ggtitle('Endpoint ASE by Forecast Years') +
+  xlab('years included in forecast') + ylab('Endpoint ASE')
+
+g6 <- ggplot() + geom_line(aes(x = 1:length(meta_roll_ase), y = meta_roll_ase)) +
+  ggtitle('Aggregated Rolling ASE by Forecast Years') + 
+  xlab('years included in forecast') + ylab('Rolling ASE')
+
+grid.arrange(g5, g6, nrow = 2)
+```
+Model evaluation metrics chage depending on criteria. 
+Endpoint ASE performs the best at 1, 3, and 5 years of data used, getting worse the more data is included. This is likely due to the model's inability to adequately predict the large outbreaks approximately every 5 years. 
+Rolling ASE performs the best at 4 years, while adding more years of data is likely due to a large number of NA's or sparse data. 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#adjustable rolling window ase framework storage
+sliderInput(inputId = "roll_num", 
+                  label = 'Training Data Length (Weeks)', 
+                  min = 1, max = 52, value = 24),
+      numericInput('horizonsize', label = 'Forecast Size (weeks)', value = 4),
+      numericInput('stepsize', label = 'Step Size (weeks)', value = 8),
+      
+      
+trainingSize = input$roll_num
+    horizon = input$horizonsize  
+    step_size = input$stepsize 
+    
+    n_windows = round((length(tdata)-(trainingSize + horizon))/step_size) #number of whole windows of training size + horizon that will fit into the given data, divided by step size
+    ASEHolder = numeric()
+    n_years = abs(input$num[1] - input$num[2])
+    
+    fcastHolder = matrix(nrow = n_windows, ncol = horizon) #create matrix that has the number of rows and columns corresponding to number of windows and length of forecast interval
+    phis = m1$phi
+    thetas = m1$theta
+    s = 0
+    d = 0
+    for( i in 1:n_windows) #how many "windows" can fit into the total length of time, rounding down
+    {
+      t_start = 1+(step_size*(i-1)) #starting point for each window's training data
+      t_end = trainingSize + (step_size*(i-1)) #endpoint
+      forecasts = fore.aruma.wge(tdata[t_start:t_end],phi = phis, theta = thetas, s = s, d = d, n.ahead = horizon, plot = FALSE)
+      ASE = mean((tdata[(t_end + 1):(t_end+horizon)] - forecasts$f)^2)
+      ASEHolder[i] = ASE
+      fcastHolder[i, ] <- forecasts$f
+    }

@@ -1,0 +1,12 @@
+name: QTW_C4_v6
+title: QTW_C4_v6
+username:
+account: seashell-scientist
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2505442
+bundleId: 3317693
+url: https://seashell-scientist.shinyapps.io/QTW_C4_v6/
+when: 1593132681.34296
+asMultiple: FALSE
+asStatic: FALSE
