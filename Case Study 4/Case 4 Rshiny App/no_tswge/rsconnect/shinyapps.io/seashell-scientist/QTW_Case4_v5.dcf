@@ -1,0 +1,13 @@
+name: QTW_Case4_v5
+title: QTW_Case4_v5
+username:
+account: seashell-scientist
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2507734
+bundleId: 3320090
+url: https://seashell-scientist.shinyapps.io/QTW_Case4_v5/
+when: 1593187233.78969
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: no_tswge_package_testing.nb.html|no_tswge_package_testing.Rmd

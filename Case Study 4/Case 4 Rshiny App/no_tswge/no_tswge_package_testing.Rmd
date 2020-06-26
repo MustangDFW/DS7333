@@ -1,0 +1,149 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+no tswge aic and aruma forecast bootleg testing
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(cdcfluview)
+library(tseries)
+```
+
+goal: approximate aic5.wge and fore.aruma.wge without the tswge package
+```{r}
+raw_data  <- read.csv('D:/SMU/DS 7333 Quantify The World/FluNetInteractiveReport_SE_Asia_1995-2019.csv')
+```
+```{r}
+S_Asia <- raw_data[which(raw_data$FLUREGION == 'Southern Asia'), ]
+t_ind <- S_Asia[which(S_Asia['ï..Country'] == 'India'), ] #leave na, convert to zero
+t_ind$ALL_INF[is.na(t_ind$ALL_INF)] <- 0
+
+year_range = 2019:1995 #call with year_range[1], ect
+n_years = 4 #this can be a user input type thing? starting from 2019, number of years to include in TS
+range_data = vector()
+
+for(j in 1:n_years){
+  range_data <- rbind(range_data, t_ind[which(t_ind$Year == year_range[j]), ])
+} #there we go, creates a df based on specified index years
+tdata <- rev(range_data$ALL_INF) #set primary ts to all influenza cases #IMPORTANT to reverse the data
+ttime <- rev(range_data$SDATE) %>% as.Date("%m/%d/%Y") %>% sort()
+```
+
+
+
+```{r}
+f<- arima(tdata, order = c(1, 0 , 0)) %>% forecast::forecast(12) #where f$mean is the mean forecast
+aic <- arima(tdata, order = c(1, 0 , 0)) %>% AIC()
+```
+
+```{r}
+test_interval = 24 #weeks
+ttrain <- tdata[1:(length(tdata)-test_interval)]
+ttest <- tdata[(length(tdata)-test_interval+1):length(tdata)]
+
+prange = 0:5
+qrange = 0:5
+#drange = 0:0 #add later to see if it slows things down
+pcomb <- expand.grid(prange, qrange)
+aic_matrix <- matrix(nrow = 0, ncol = (length(pcomb)+1)) #preallocate cols to match vars
+#add seasonality permuations here later? 
+
+for(i in 1:length(pcomb[,1])){
+  ptemp <- pcomb[i, 1]
+  qtemp <- pcomb[i, 2]
+  #dtemp <- pcomb[i, 3]
+  x <- arima(ttrain, c(ptemp, qtemp, 0))
+  atemp <- x$aic #pull aic out of aic model fit
+  aic_matrix <- rbind(aic_matrix, c(ptemp, qtemp, atemp))
+}
+df_a <- as.data.frame(aic_matrix)
+names(df_a) <- c('p', 'q', 'aic')
+
+aic_df <- df_a[order(df_a$aic, decreasing = FALSE), ] #order so that lowest aic is at the top
+#head(aic_df)
+
+f<- arima(ttrain, order = c(aic_df[1, 1], aic_df[1, 2] , 0)) %>% forecast::forecast(test_interval)
+ase <- mean((f$mean - ttest)^2)
+extra_metrics <- forecast::accuracy(f$mean, ttest)
+
+timeframe = data.frame(date = ttime, actual = tdata, train = c(ttrain, rep(NA, test_interval)), pred = c(rep(NA, (length(ttrain))), f$mean))
+
+ggplot(timeframe) + 
+  geom_line(aes(x = date, y = actual, col = 'actual'))+
+  geom_line(aes(x = date, y = train, col = 'training data')) +
+  geom_line(aes(x = date, y = pred, col = 'predictions')) +
+  ggtitle(paste('Total Influenza Case Predictions: ARIMA(', aic_df[1, 1], ',',aic_df[1, 2], ',','0', ')'), subtitle = paste('ASE for', test_interval, 'week prediction: ', ase)) +
+  xlab('Date') + ylab('Total Cases')
+
+```
+```{r}
+
+```
+```{r}
+raw_data  <- read.csv('FluNetInteractiveReport_SE_Asia_1995-2019.csv')
+S_Asia <- raw_data[which(raw_data$FLUREGION == 'Southern Asia'), ]
+t_ind <- S_Asia[which(S_Asia[1] == 'India'), ] 
+t_ind$ALL_INF[is.na(t_ind$ALL_INF)] <- 0
+year_range = 1995:2019 #call with year_range[1], ect
+
+#n_years = input$num #create dataset with 1 years data, 2 years, based on slider input
+    range_data = vector()
+    for(j in year_range[4:22]){
+      range_data <- rbind(range_data, t_ind[which(t_ind$Year == j), ])
+    }
+    tdata <- (range_data$ALL_INF) #set primary ts to all influenza cases 
+    ttime <- (range_data$SDATE) %>% as.Date("%m/%d/%Y") %>% sort()
+    
+    test_interval = 12 #weeks
+    
+    ttrain <- tdata[1:(length(tdata)-test_interval)]
+    ttest <- tdata[(length(tdata)-test_interval+1):length(tdata)]
+    
+    prange = 0:5
+    qrange = 0:5
+    drange = 0:0 #add later to see if it slows things down
+    pcomb = expand.grid(prange, qrange)
+    aic_matrix = matrix(nrow = 0, ncol = (length(pcomb)+1)) #preallocate cols to match vars
+    
+    df_a <- as.data.frame(aic_matrix)
+    
+    
+      for(i in 1:length(pcomb[,1])){
+      ptemp <- pcomb[i, 1]
+      qtemp <- pcomb[i, 2]
+      #dtemp <- pcomb[i, 3]
+      x <- arima(ttrain, c(ptemp, qtemp, 0), method = ("ML")) 
+      atemp <- x$aic #pull aic out of aic model fit
+      aic_matrix <- rbind(aic_matrix, c(ptemp, qtemp, atemp)) }
+    
+    
+    holder_matrix <- matrix(0, nrow = 6*2*6, ncol = 4)
+    j = 1
+    for(p in 0:5) for(d in 0:1) for(q in 0:5){
+      holder_matrix[j, ] <- c(p, d, q, AIC(arima(tdata, order = c(p, d ,q))) )
+      j <- j+1
+    }
+    df_a <- as.data.frame(holder_matrix)
+    names(df_a) <- c('p', 'd', 'q', 'aic')
+    aic_df <- df_a[order(df_a$aic, decreasing = FALSE), ] #order so that lowest aic is at the top
+    
+    names(df_a) <- c('p', 'q', 'aic')
+    aic_df <- df_a[order(df_a$aic, decreasing = FALSE), ] #order so that lowest aic is at the top
+    #head(aic_df) #shows top 5 aic values for pdq permutations
+    #fit model using aic values
+    f<- arima(ttrain, order = c(aic_df[1, 1], aic_df[1, 2] , 0)) %>% forecast::forecast(test_interval)
+    ase <- mean((f$mean - ttest)^2)
+    extra_metrics <- forecast::accuracy(f$mean, ttest)
+    
+    timeframe = data.frame(date = ttime, actual = tdata, train = c(ttrain, rep(NA, test_interval)), pred = c(rep(NA, (length(ttrain))), f$mean))
+    
+    ggplot(timeframe) + 
+      geom_line(aes(x = date, y = actual, col = 'actual'))+
+      geom_line(aes(x = date, y = train, col = 'training data')) +
+      geom_line(aes(x = date, y = pred, col = 'predictions')) +
+      ggtitle(paste('Total Influenza Case Predictions: ARIMA(', aic_df[1, 1], ',',aic_df[1, 2], ',','0', ')'), subtitle = paste('ASE for', test_interval, 'week prediction: ', ase)) +
+      xlab('Date') + ylab('Total Cases')
+```
+
