@@ -1,5 +1,6 @@
 ---
 title: "case study 4 v3"
+output: pdf_document
 ---
 
 
@@ -77,17 +78,19 @@ ttime = t_ind$SDATE %>% as.Date("%m/%d/%Y") #store the timeline as date object v
 #it looks like all the weeks fall on the same SDATE's, so it should be safe to use the same date vector for different countries.
 
 ggplot(t_ind) +
-  geom_line(aes(x = ttime, y = ALL_INF, col = 'Total Influenza Cases'))+
+  geom_line(aes(x = ttime, y = ALL_INF, col = 'Total'))+
   #geom_line(aes(x = ttime, y = AH1, col = 'AH1'))+
   #geom_line(aes(x = ttime, y = AH1N12009, col = '2009 Swine Flu'))+
   #geom_line(aes(x = ttime, y = AH3, col = 'AH3'))+
   #geom_line(aes(x = ttime, y = AH5, col = 'AH5'))+
   #geom_line(aes(x = ttime, y = ANOTSUBTYPED, col = 'Untyped Inf A'))+
-  geom_line(aes(x = ttime, y = INF_A, col = 'total type A'))+
+  geom_line(aes(x = ttime, y = INF_A, col = 'Type A'))+
   #geom_line(aes(x = ttime, y = BYAMAGATA, col = 'Yamagata STRAIN B'))+
   #geom_line(aes(x = ttime, y = BVICTORIA, col = 'Victoria Strain B'))+
   #geom_line(aes(x = ttime, y = BNOTDETERMINED, col = 'Untyped Inf B'))+
-  geom_line(aes(x = ttime, y = INF_B, col = 'total type B')) +
+  geom_line(aes(x = ttime, y = INF_B, col = 'Type B')) +
+  ggtitle("World Health Organization Total Influenza Cases India 2017 - 2019") +
+  xlab('Years') + ylab('Total Influenza Cases') + theme(legend.title = element_blank())
   scale_y_continuous()
 ```
 
