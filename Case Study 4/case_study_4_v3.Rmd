@@ -1,6 +1,5 @@
 ---
 title: "case study 4 v3"
-output: html_notebook
 ---
 
 
@@ -34,20 +33,35 @@ query below is SE Asia from 1995 to 2019
 raw_data  <- read.csv('D:/SMU/DS 7333 Quantify The World/FluNetInteractiveReport_SE_Asia_1995-2019.csv')
 ```
 Column guide for WHO data csv columns
+
 SPEC_RECIEVED_NB - Specimens recieved by the WHO
+
 SPEC_PROCESSED_NB - specimens processed by the WHO
+
 AH1 - all A type influenza viruses categorized by subtype
+
 A(H1N1pdm09
+
 AH3
+
 AH5
+
 ANOTSUBTYPED
+
 INF(A) - total of all influenza A viruses detected
+
 BYAMAGATA - B(Yamagata lineage) - various types of influenze B type viruses
+
 BVICTORIA - B(Victoria Lineage)
+
 BNOTDETERMINED
+
 INF_B - total influenze B viruses 
+
 ALL_INF - number of influenze positive viruses
+
 ALL_INF2 - number of influenze negative viruses
+
 TITLE - ili activity? most have no report as the column
 
 will have to look more into the details, but it looks like this dataset is recording the number of virus strains, not individual cases of that virus. specimens recieved/processed usually matches up with INF + or -, indicating that those specimens were all tested and sorted into either yes, it was an influenza virus, or no, it was not. 
@@ -101,6 +115,16 @@ basically it is stationary
 
 
 feed into modeling block 
+
+modelling block parts - 
+
+AIC5.wge returns the 5 lowest AIC values, used to determine the number of p and q coefficients for the AutoRegressive and Moving Average parts of ARIMA, respectively
+
+est.arma.wge takes the time series object and the number of p and q terms as arguments to estimate the coefficients for those p and q terms
+
+fore.aruma.wge takes the coeficients and forecasts a specified number of units forwards
+
+insert definitions for ASE(mean squared error), accuracy, mape, ect
 ```{r}
 #model fitting with tdata
 pspan = 0:10 #range of values to look for possible p and q coefficients for AR and MA
@@ -133,6 +157,13 @@ g3 <- ggplot(timeFrame)+
 g3
 ```
 
+training size = how many weeks to use as training data
+horizon = how many weeks to use as testing data
+step_size - how  far to move the "window" every iteration 
+
+breaks up the time series object into a slices of specified length, evaluate using the mean of all ASE at the end
+
+lets you know how well a model generalizes across the "body" of the time series, or if it only good before a spike, when stationary, ect
 ```{r}
 #updated with step size,how much the "window" moves per interval 
 #rolling window ase: apply model predictions to small segments of the given data and aggregate metrics
