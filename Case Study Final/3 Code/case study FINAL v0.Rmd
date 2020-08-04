@@ -13,6 +13,7 @@ library(corrplot)
 #prediction
 library(RSNNS) #older
 library(neuralnet) #newer
+library(randomForest)
 #analysis
 library(caret)
 ```
@@ -191,14 +192,19 @@ hm ok not much of a difference, 24, 29, and 30 don't have any strong correlation
 
 NN classification test 1
 ```{r}
+start.time <- Sys.time()
+set.seed(123412415)
 #stuttgart neural network simulator test
 #where size = units in hidden layer
-
 inputs_v3 <- data.matrix(data_v2[, -data_v2$y])
 target_v3 <- data.matrix(data_v2$y)
 data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
 
 model1 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = 5, learnFuncParams = c(0.1), maxit = 50, inputsTest = data_v4$inputsTest, targetsTest = data_v4$targetsTest)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
 ```
 
 ```{r}
@@ -311,38 +317,70 @@ data_m4_splits <- splitForTrainingAndTest(inputs_v4, target_v4, ratio = 0.3)
 ```
 
 ```{r}
+#keeps timing out, look at this later
+# start.time <- Sys.time()
+# #note data_v2 is the non-mixed cleaned dataset
+# #looking back at the correlatin plot, lets select a few variables that appear to have the strongest correlation with Y as the initial variables for a baseline logistic regression
+# #feed in test/train splits for verification data
+# data_partial = data.frame(target = data_m4_splits$targetsTrain, v1 =data_m4_splits$inputsTrain[, 1], v2 = data_m4_splits$inputsTrain[, 2])
+# #parameter details from - https://cran.r-project.org/web/packages/neuralnet/neuralnet.pdf 
+# model4 = neuralnet(target~v1+v2, data = data_partial, 
+#                    algorithm = 'backprop', 
+#                    learningrate = 0.1, 
+#                    rep = 10, #repetitions for training
+#                    hidden = c(10), #vector of hidden layers
+#                    startweights = NULL, #random intialization
+#                    act.fct = 'logistic', 
+#                    linear.output = FALSE)
+# plot(model4)
+# 
+# end.time <- Sys.time()
+# time.taken <- end.time - start.time
+# print(paste('time ellapsed:', time.taken))
+```
+
+```{r}
+# testdata4 <- data.frame(v1 =data_m4_splits$inputsTest[, 1], v2 = data_m4_splits$inputsTest[, 2])
+# test_pred4 <- compute(model4, testdata4)
+# #convert results to binary
+# pred4 <- ifelse(test_pred4$net.result > 0.5, 1, 0) #round results from model to zero or one
+# resultsv1(data_m4_splits$targetsTest, pred4)
+```
+
+model5, random forest classification
+```{r}
 start.time <- Sys.time()
-#note data_v2 is the non-mixed cleaned dataset
-#looking back at the correlatin plot, lets select a few variables that appear to have the strongest correlation with Y as the initial variables for a baseline logistic regression
-#feed in test/train splits for verification data
-data_partial = data.frame(target = data_m4_splits$targetsTrain, v1 =data_m4_splits$inputsTrain[, 1], v2 = data_m4_splits$inputsTrain[, 2])
-#parameter details from - https://cran.r-project.org/web/packages/neuralnet/neuralnet.pdf 
-model4 = neuralnet(target~v1+v2, data = data_partial, 
-                   algorithm = 'backprop', 
-                   learningrate = 0.01, 
-                   rep = 10, #repetitions for training
-                   hidden = c(10), #vector of hidden layers
-                   startweights = NULL, #random intialization
-                   act.fct = 'logistic', 
-                   linear.output = FALSE, 
-                   stepmax = 1e8)
-plot(model4)
+#using library(randomForest) 
+data_v2_trim <- data_v2[sample(1:dim(data_v2)[1], size = round(0.15* dim(data_v2)[1])), ] #reduce to n percent of data for testing
+#data_v2_trim$y <- as.factor(data_v2_trim$y) #convert target variable to factor for RF
+
+inputs_v3 <- data.matrix(data_v2_trim[, 1:50])#exclude target column
+target_v3 <- data.matrix(data_v2_trim$y)
+data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
+
+train_set_rf5 <- data.frame(data_v4$inputsTrain, as.factor(data_v4$targetsTrain))
+names(train_set_rf5) <- names(data_v2) #copy over col names
+test_set_rf5 <- data.frame(data_v4$inputsTest, as.factor(data_v4$targetsTest))
+names(test_set_rf5) <- names(data_v2) #copy over col names
+
+rf5 <- randomForest(y ~., data = test_set_rf5,
+                    type = 'classification', 
+                    proximity = TRUE, 
+                    importance = TRUE)
+print(rf5)
 
 end.time <- Sys.time()
 time.taken <- end.time - start.time
 print(paste('time ellapsed:', time.taken))
 ```
 
+apply random forest model to the test data
 ```{r}
-testdata4 <- data.frame(v1 =data_m4_splits$inputsTest[, 1], v2 = data_m4_splits$inputsTest[, 2])
-test_pred4 <- compute(model4, testdata4)
-#convert results to binary
-pred4 <- ifelse(test_pred4$net.result > 0.5, 1, 0) #round results from model to zero or one
-resultsv1(data_m4_splits$targetsTest, pred4)
+pred5 <- predict(rf5, newdata = test_set_rf5[, -51])
+resultsv1(as.factor(test_set_rf5[,51]), pred5)
 ```
 
-
-
+some data leakage, this shouldn't be 100%
 
 
 note, store expected costs from model classifications for graphical comparison at the end?? 
