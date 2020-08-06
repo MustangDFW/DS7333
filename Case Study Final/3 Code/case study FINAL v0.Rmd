@@ -1,22 +1,30 @@
 ---
-title: "QTW FINAL CASE STUDY SUMMER 2020"
-output: html_notebook
+title: "**QTW FINAL CASE STUDY SUMMER 2020**"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 5
 ---
-```{r}
+```{r message = FALSE}
 #data manipulation
 library(tidyverse)
 library(dplyr)
+library(data.table)
 #visualization
 library(ggplot2)
 library(skimr)
 library(corrplot)
+library(kableExtra)
 #prediction
 library(RSNNS) #older
 library(neuralnet) #newer
 library(randomForest)
+library(e1071)
 #analysis
-library(caret)
+library(caret) #one hot encoding
 ```
+#### Introduction
+
 data from - https://smu.box.com/s/k9x192jxm39enjw2wx8ouw2kopx33l32
 classify column 'y' using features x0-x49
 minimize cost on a theorhetical unknown dataset, where
@@ -24,9 +32,11 @@ false positive = -10$
 false negative = -500$
 true positive/negative = -0$
 
+find a model to reasonably minimize cost
+
 include- 
 confusion plot 
-with costs average/predicted as a model metric
+with costs average/predicted[ratio] as a model metric
 
 ```{r}
 #file_name = file.choose()
@@ -34,20 +44,27 @@ with costs average/predicted as a model metric
 data_raw = read.csv('D:/SMU/DS 7333 Quantify The World/qtw_final_project.csv')
 ```
 
-cleaning section and eda
+#### EDA/Cleaning
 
-```{r}
+```{r, results = 'hide'}
 #eda with skimr
 skim(data_raw) %>% dplyr::select(skim_type, skim_variable, n_missing)
 skim(data_raw) %>% dplyr::select(skim_type, skim_variable, numeric.mean)
+#add additional skimr output here
+skim(data_raw)
 ```
+
 most columns look like they are missing a few, less than triple digits. Likely not significant next to the 160K total rows
+
+also note that the average value of y is 0.401, indicating only ~40% of rows have y = 1
+
 ```{r}
 #remove rows with na
 data_v1 <- data_raw[complete.cases(data_raw), ]
 dim(data_v1)
 ```
 from 160,000 to 158,534, removing all rows with NA loses 1,500 ish rows, or 0.9% of data
+
 ```{r}
 #col 37 is dollar amounts stored as characters, need to convert
 data_v1$x37 <- as.numeric(substr(data_v1$x37, 2, nchar(data_v1$x37))) #index string with substring to cut out the dollar sign and convert to numeric 
@@ -55,24 +72,14 @@ data_v1$x37 <- as.numeric(substr(data_v1$x37, 2, nchar(data_v1$x37))) #index str
 data_v1$x32 <- as.numeric(substr(data_v1$x32, 1, nchar(data_v1$x32)-1)) #same thing
 ```
 ok, now we have numeric values for x37 instead of characters, run na removal again
+
 ```{r}
 data_v1 <- data_v1[complete.cases(data_v1), ]
 dim(data_v1)
 ```
 trims off another 70 rows, negligible (probably)
-```{r}
-# #isolate numeric columns only
-# numeric_only <- data_v1[, unlist(lapply(data_v1, is.numeric))] 
-# #corrplot
-# cor1 <- cor(numeric_only)
-# corrplot(cor1, method = 'circle')
-# ggsave('corplot1.png', device = 'png', plot = last_plot(), dpi = 300, width = 10, height = 10, units = 'in')
-# #saves to wherever getwd() is pointing
-```
-A bit had to interpret, but what we really care about is column y, which doesn't have any outstanding correlations. some minor positive corelations with 20 and 23, and minor negative with 40 and 49. (easier to read in separate window)
 
-also note that rows 2/6 and 38/41 are closely correlated, may be able to eliminate one
-
+### Categorical Encoding
 ```{r}
 #looking at number of categorical variables in each non-numeric column 
 non_numeric_only <- data_v1[, !unlist(lapply(data_v1, is.numeric))] 
@@ -81,7 +88,7 @@ for(i in 1:length(non_numeric_only)){
   print(table(non_numeric_only[, i]))
 }
 ```
-not too many labels to one hot encode
+
 ```{r}
 #assign numeric values to each reigon, asia, america, 'euorpe'
 temp_labels <- unique(non_numeric_only$x24)
@@ -106,8 +113,9 @@ for(i in 1:length(tc)){
 }
 temp_labels
 table(tc)
-reigon_encoded <- as.factor(tc) #store for later integration
+reigon_numeric <- as.factor(tc) #store for later integration
 ```
+
 ```{r}
 #monthly encoding
 temp_labels <- unique(non_numeric_only$x29)
@@ -145,7 +153,7 @@ for(i in 1:length(tc)){
 temp_labels
 table((non_numeric_only$x29))
 table(tc)
-month_encoded <-as.factor(tc) #store for later integration
+month_numeric <-as.factor(tc) #store for later integration
 
 ```
 ok, sorted months match up 
@@ -172,32 +180,129 @@ for(i in 1:length(tc)){
 temp_labels
 table((non_numeric_only$x30))
 table(tc)
-weekday_encoded <-as.factor(tc) #store for later integration
+weekday_numeric <-as.factor(tc) #store for later integration
 ```
 'thurday' <-----
 anyways, same matchups, looks correct
 
-now integrate these values back into another version of the data in order to do correlation analysis on all numerics
+
+not too many labels to one hot encode
 ```{r}
-data_v2 <- data_v1
-data_v2$x24 <- reigon_encoded
-data_v2$x29 <- month_encoded
-data_v2$x30 <- weekday_encoded
+#from caret
+dmy24 <- dummyVars(" ~ .", data = non_numeric_only)
+trsf24 <- data.frame(predict(dmy24, newdata = non_numeric_only))
+head(trsf24)
 
-numeric_only <- data_v2[, unlist(lapply(data_v2, is.numeric))] 
-cor2 <- cor(numeric_only)
-corrplot(cor2, method = 'circle')
 ```
-hm ok not much of a difference, 24, 29, and 30 don't have any strong correlation with y, but might be useful to have everything numeric anyways
+here dummy variables are created for each categorial value, adding 4 + 13 + 5 = 23 columns total
+regional values are blank, america, asia, 'euorpe'
+month values are blank + 12
+day of week values are blank + monday:friday 
 
+```{r}
+#add the columns to the actual dataset, drop the now redundant columns
+data_v3 <- data_v1[, unlist(lapply(data_v1, is.numeric))] #remove x24, 29, 30
+data_v3 <- cbind(data_v3, trsf24) #attach the one hot encoded data
+head(data_v3)
+```
+
+
+### Correlation Analysis
+so columns 24, 29, and 30 were region, month, and day of the week (weekdays only) respectively. All were one hot encoded generating additional columns for binary values for each category. 0.9% of the data was missing in some form, minimal value from imputing, so dropped instead. 
+
+now integrate these values back into another version of the data in order to do correlation analysis 
+```{r}
+# data_v2 <- data_v1 #data v2 is including categorical variables not one hot encoded, numerics only
+# data_v2$x24 <- reigon_numeric
+# data_v2$x29 <- month_numeric
+# data_v2$x30 <- weekday_numeric
+# 
+# numeric_only <- data_v2[, unlist(lapply(data_v2, is.numeric))] 
+# cor2 <- cor(numeric_only)
+# corrplot(cor2, method = 'circle')
+#hm ok not much of a difference, 24, 29, and 30 don't have any strong correlation with y, but might be useful to have everything numeric anyways
+```
+
+```{r}
+cor3 <- cor(data_v3) #includes one hot encoded 
+corrplot(cor3, method = 'circle')
+```
+strong negative correlations between wedsnesday and tuesday, asia and europe
+38 likely redundant with 41, 2 with 6
+no strong correlation with any of the individual categorical variables and target y
+
+```{r}
+#additional graphs of categorical variable distributions
+
+```
+
+
+#### Model 0: Baseline MLR 
+including all variables
+```{r paged.print=TRUE, results = 'hide'}
+set.seed(123412415)
+
+train_index <- createDataPartition(data_v3$y, p = 0.7, list = FALSE)
+train_v1 <- data_v3[train_index, ]
+test_v1 <- data_v3[-train_index, ]
+
+
+model0 <- lm(y ~. , train_v1)
+summary(model0)
+anova(model0)
+plot(model0)
+```
+Some significant variables from ANOVA are 
+2, 7, 8, 12, 20, 23, 27, 28, 32, 37, 38, 40, and 24america
+interpretation of the fit: [goes here]
+```{r}
+resultsv1 <- function(actual_values, predictions){
+  ctable <- table(actual_values, predictions)
+  cmat <- confusionMatrix(ctable)
+  #print(cmat)
+  #return(cmat)
+  d_out <- (ctable[2, 1]*500 + ctable[1, 2] *10)
+  s_output <- (paste('total cost of errors from model: $', format(d_out, big.mark = ',')))
+  fn_chance <- ctable[2, 1]/(ctable[1, 1]+ctable[2, 1]) #%of negative predictions that are false negatives
+  fp_chance <- ctable[1, 2]/(ctable[1, 2] + ctable[2, 2]) #%of positive predictions that are false positives
+  return(list(cmat, s_output, d_out, fn_chance, fp_chance))
+}
+```
+
+```{r}
+#predictions
+m0_preds <- predict(model0, newdata = test_v1)
+test_pred <- ifelse(m0_preds > 0.5, 1, 0) #round results from model to zero or one
+resultsv1(test_v1$y, test_pred)
+```
+Not too bad, 70% accuracy with linear regression, 28% chance of negatives being costly mistakes
+
+### MLR with reduced variables
+```{r, results = 'hide'}
+model0.1 <- lm(y ~ x2 + x7 + x8 + x20 + x23 + x27 + x28 + x32 + x37 + x38 + x40 + x24america, data_v3)
+summary(model0.1)
+anova(model0.1)
+plot(model0.1)
+
+m0.1_preds <- predict(model0.1, newdata = test_v1)
+test_pred <- ifelse(m0.1_preds > 0.5, 1, 0) #round results from model to zero or one
+m0_results <- resultsv1(test_v1$y, test_pred)
+m0_results
+```
+about the same performance with less variables 
+
+
+#### Model 1: Single Layer Neural Net
 NN classification test 1
 ```{r}
 start.time <- Sys.time()
 set.seed(123412415)
 #stuttgart neural network simulator test
 #where size = units in hidden layer
-inputs_v3 <- data.matrix(data_v2[, -data_v2$y])
-target_v3 <- data.matrix(data_v2$y)
+inputs_v3 <- data.matrix(data_v3[, -data_v3$y]) #one hot encoded set
+target_v3 <- data.matrix(data_v3$y)
+#inputs_v3 <- data.matrix(data_v2[, -data_v2$y]) #categorical set
+#target_v3 <- data.matrix(data_v2$y)
 data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
 
 model1 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = 5, learnFuncParams = c(0.1), maxit = 50, inputsTest = data_v4$inputsTest, targetsTest = data_v4$targetsTest)
@@ -207,7 +312,7 @@ time.taken <- end.time - start.time
 print(paste('time ellapsed:', time.taken))
 ```
 
-```{r}
+```{r, results = 'hide'}
 summary(model1)
 #model1
 extractNetInfo(model1)
@@ -221,37 +326,45 @@ note that model outputs predictions as a gradient between zero and one, need to 
 false positive = -10$
 false negative = -500$
 
-```{r}
-resultsv1 <- function(actual_values, predictions){
-  ctable <- table(actual_values, predictions)
-  cmat <- confusionMatrix(ctable)
-  print(cmat)
-  print(paste('total cost of errors from model: $', format((ctable[2, 1]*500 + ctable[1, 2] *10), big.mark = ',')))
-}
-```
+problem, monetary metric is not generalizable across different test sizes, use ratio of false positve to false negative instead. 
+functional output will be 
+1, confusion matrix, 
+2, table, 
+3 string output of cost estimation, 
+4, % negative predictions that were actually positive, 
+5, % positive predictions that were actually negative
+
 
 ```{r}
 train_prob <- fitted.values(model1)
 train_pred <- ifelse(train_prob > 0.5, 1, 0) #round results from model to zero or one
-resultsv1(data_v4$targetsTrain, train_pred)
+x <- resultsv1(data_v4$targetsTrain, train_pred)
+x
 ```
 
 ```{r}
 test_prob <- model1$fittedTestValues
 test_pred <- ifelse(test_prob > 0.5, 1, 0)
-resultsv1(data_v4$targetsTest, test_pred)
+m1_results <- resultsv1(data_v4$targetsTest, test_pred)
+show(m1_results)
 ```
 
 so iteration one of the model doesn't do too well in either test or training sets, 60% accuracy isn't great
+encoded categorical variables has about 1% less accuracy
+
+#### Model 2: NN BackPropMomentum
 
 NN classification test 2
 functions available in the RSNNS package view with - getSnnsRFunctionTable()
-```{r}
+```{r, results = 'hide'}
+start.time <- Sys.time()
 #increasing layer size - no difference
 #increase gradient descent step size - not much difference
 #change learning function to backpropMomentum #slightly better, up to 70%
-inputs_v3 <- data.matrix(data_v2[, -data_v2$y])
-target_v3 <- data.matrix(data_v2$y)
+inputs_v3 <- data.matrix(data_v3[, -data_v3$y]) #one hot encoded set
+target_v3 <- data.matrix(data_v3$y)
+#inputs_v3 <- data.matrix(data_v2[, -data_v2$y])
+#target_v3 <- data.matrix(data_v2$y)
 data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
 
 model2 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = 5, learnFunc = 'BackpropMomentum', learnFuncParams = c(0.1, 0.5, 0.1, 0.1), maxit = 50, inputsTest = data_v4$inputsTest, targetsTest = data_v4$targetsTest)
@@ -263,6 +376,10 @@ model2 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = 5, learnFunc = '
 summary(model2)
 plotRegressionError(model2$fittedTestValues, data_v4$targetsTest)
 plotROC(model2$fittedTestValues, data_v4$targetsTest)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
 ```
 
 ```{r}
@@ -272,15 +389,77 @@ resultsv1(data_v4$targetsTrain, train_pred)
 
 test_prob <- model2$fittedTestValues
 test_pred <- ifelse(test_prob > 0.5, 1, 0)
-resultsv1(data_v4$targetsTest, test_pred)
+m1.2_results <- resultsv1(data_v4$targetsTest, test_pred)
+show(m1.2_results)
 ```
+
+
 switching the nn to a momentum based backpropagation function brings general accuracy up to 70%, but also greatly reduces the number of false negatives, decreasing costs
 
-NN classification test 3
+we also see with the interpretation boundary(?) set lower, rounding up from 0.4 instead of 0.5 for confidence as a 1, accuracy goes down, but false negatives also decrease, reducing cost by about 3 million, with 25% of the negatives being false negatives
+
+let's iterate on that decision boundary
 ```{r}
-#
-inputs_v3 <- data.matrix(data_v2[, -data_v2$y])
-target_v3 <- data.matrix(data_v2$y)
+#decision between 0.3 and 0.6 are necessary to avoid predicting all 1 or 0, determined by looking at range of values for predictions
+#aimed at the testing split
+boundary_seeker <- function(test_probability, actual_test_data){
+  blist <- seq(min(test_probability), max(test_probability), 0.05) 
+  fn_holder <- list()
+  fp_holder <- list()
+  a_holder <- list()
+  d_holder <- list()
+  for(i in 1:length(blist)){
+    test_pred <- ifelse(test_probability > blist[i], 1, 0)
+    temp1 <- resultsv1(actual_test_data, test_pred)
+    fn_holder[i] <- temp1[[1]]$table[2, 1]
+    fp_holder[i] <- temp1[[1]]$table[1, 2]
+    a_holder[i] <- temp1[[1]]$overall[[1]] #stores the accuracy rating from the output
+    d_holder[i] <- temp1[[3]] #stores dollar amount
+    }
+  #and visualize
+  #values are scaled for the dataframe melt in order to get the cost in millions in the same neighborhood as percent accuracy
+  #dataframe from flattened list of lists, indexing the results from function return got a bit messy
+  btable <- data.table('boundary' = blist, 
+                       'false negatives' = scale(unlist(fn_holder)), 
+                       'false positive' = scale(unlist(fp_holder)), 
+                       'accuracy' = scale(unlist(a_holder)),
+                       'cost' = scale(unlist(d_holder))) #don't need cost for visualization, as cost and false negatives are linear? 
+  btable2 <- melt(btable, id = 1) #condenses the datatable 2x col with labels for ggplot's categorical coloring
+  #head(btable2)
+  decision <- ggplot(btable2) +
+    geom_line(aes(x = boundary, y = value, col = variable))+
+    ggtitle('Model results based on decision boundary')
+  show(decision)
+  }
+```
+```{r}
+boundary_seeker(test_prob, data_v4$targetsTest)
+```
+We can see that adjusting the classification boundary of the weighted output from the NN can greatly reduce cost at the expense of accuracy. The output from this function is scaled at zero in order to fit the scales of the estimated cost and accuracy on the same graph in a readable fashion. As a result the maximum values do not represent maximum accuracy or cost, just the upper range of the recorded accuracy and cost
+We can minimize cost at the expense of extremely high false positive rate and low accuracy; always predicting a positive is however not usually a sound strategy.
+the highest accuracy is comes from setting the boundary around greater than 0.5, but also has high rate of false negatives. 
+We can see that the optimal trade-off between cost and accuracy is somewhere in the middle holding all other parameters of the model constant. 
+
+Let's adjust the decision boundary for predictions being classified as zero or oen
+```{r}
+train_prob <- fitted.values(model2)
+train_pred <- ifelse(train_prob > 0.32, 1, 0) #round results from model to zero or one
+resultsv1(data_v4$targetsTrain, train_pred)
+
+test_prob <- model2$fittedTestValues
+test_pred <- ifelse(test_prob > 0.32, 1, 0)
+resultsv1(data_v4$targetsTest, test_pred)
+```
+With the adjusted value of the decision boundary, choosing to classify predictions at little as .4 as a 1 (treating even 40% chance of being a 1 as a 1) reduces accuracy from 69 - 67%, and reduces cost on the test set from 3.3 to 2.4 million$. 
+```{r}
+m2_results <- resultsv1(data_v4$targetsTest, test_pred)
+```
+#### Model 3: NN w/BackpropMomentum and TANH
+NN classification test 3
+```{r, results = 'hide'}
+#with tanh as activation function
+inputs_v3 <- data.matrix(data_v3[, -data_v3$y])
+target_v3 <- data.matrix(data_v3$y)
 data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
 
 model3 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = 5, 
@@ -296,74 +475,81 @@ plotRegressionError(model3$fittedTestValues, data_v4$targetsTest)
 plotROC(model3$fittedTestValues, data_v4$targetsTest)
 ```
 ```{r}
-train_prob <- fitted.values(model2)
-train_pred <- ifelse(train_prob > 0.5, 1, 0) #round results from model to zero or one
-resultsv1(data_v4$targetsTrain, train_pred)
+boundary_seeker(model3$fittedTestValues, data_v4$targetsTest)
+```
+interesting shapes here, intersection at 0.32 or 0.42 might be the the ideal balance between cost and acurracy? 
+```{r}
+# boundary_value = 0.17
+# train_prob <- fitted.values(model2)
+# train_pred <- ifelse(train_prob > boundary_value, 1, 0) #round results from model to zero or one
+# resultsv1(append(data_v4$targetsTrain, c(1, 0)), append(train_pred, c(1, 0)))
+
+test_pred <- ifelse(test_prob > .5, 1, 0)
+resultsv1(append(data_v4$targetsTest, c(1, 0)), append(test_pred, c(1, 0))) 
 
 test_prob <- model2$fittedTestValues
-test_pred <- ifelse(test_prob > 0.5, 1, 0)
+test_pred <- ifelse(test_prob > .32, 1, 0)
+resultsv1(append(data_v4$targetsTest, c(1, 0)), append(test_pred, c(1, 0))) #adding singular instances of either class to validate mono class sorting results(it won't work normally if either entry into results v1 is all 1's or 0's)
+
+test_pred <- ifelse(test_prob > .42, 1, 0)
+resultsv1(append(data_v4$targetsTest, c(1, 0)), append(test_pred, c(1, 0)))
+```
+we can, of course, greatly minimize false negatives and thier associated costs by always guessing positive, but that's usually not a valid business strategy. 
+setting the decision boundary to a more reasonable 0.47 from the 0.5 isn't much a difference though, and costs more money than the backprop with standard activation in exchange for only 3% more total accuracy.
+```{r}
+m3_results <- resultsv1(append(data_v4$targetsTest, c(1, 0)), append(test_pred, c(1, 0)))
+```
+
+#### Model 4: 3 layer NN w/BackpropMomentum and tanH 
+NN classification test 4
+```{r, results = 'hide'}
+start.time <- Sys.time()
+inputs_v3 <- data.matrix(data_v3[, -data_v3$y])
+target_v3 <- data.matrix(data_v3$y)
+data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
+#5x5 and 3x5 all had rather homogenous outputs
+model4 <- mlp(data_v4$inputsTrain, data_v4$targetsTrain, size = c(25), learnFunc = 'BackpropMomentum', learnFuncParams = c(0.1, 0.5, 0.1, 0.1), maxit = 50, inputsTest = data_v4$inputsTest, targetsTest = data_v4$targetsTest)
+
+summary(model4)
+plotRegressionError(model2$fittedTestValues, data_v4$targetsTest)
+plotROC(model2$fittedTestValues, data_v4$targetsTest)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
+```
+```{r}
+boundary_seeker(model4$fittedTestValues, data_v4$targetsTest)
+```
+accuracy cost tradeoff around 0.25 or 0.45 (want a spot where accuracy is high and cost is low)
+```{r}
+# train_prob <- fitted.values(model4)
+# train_pred <- ifelse(train_prob > 0.5, 1, 0) #adjust weight for class imbalance
+# resultsv1(data_v4$targetsTrain, train_pred)
+
+test_pred <- ifelse(test_prob > 0.25, 1, 0)
+m4_results <- resultsv1(data_v4$targetsTest, test_pred)
+show(m4_results)
+
+test_pred <- ifelse(test_prob > 0.45, 1, 0)
 resultsv1(data_v4$targetsTest, test_pred)
 ```
-Not better than backprop with standard activation 
-RSNNS is actually quite old and doesn't natively support newer activation functions like ReLU, use package
-'neuralnet' for model 4
-```{r}
-#redo splits to only include certain variables 
-data_v2_trim <- data_v2[sample(1:dim(data_v2)[1], size = round(0.01* dim(data_v2)[1])), ] #reduce to n percent of data for testing
-#inputs_v4 <- data.matrix(data_v2_trim[, -data_v2_trim$y]) #all columns except y
-inputs_v4 <- data.matrix(data_v2_trim[, -c(21, 23)]) #only columns 20 and 22
-target_v4 <- data.matrix(data_v2_trim$y)
-data_m4_splits <- splitForTrainingAndTest(inputs_v4, target_v4, ratio = 0.3)
-```
 
-```{r}
-#keeps timing out, look at this later
-# start.time <- Sys.time()
-# #note data_v2 is the non-mixed cleaned dataset
-# #looking back at the correlatin plot, lets select a few variables that appear to have the strongest correlation with Y as the initial variables for a baseline logistic regression
-# #feed in test/train splits for verification data
-# data_partial = data.frame(target = data_m4_splits$targetsTrain, v1 =data_m4_splits$inputsTrain[, 1], v2 = data_m4_splits$inputsTrain[, 2])
-# #parameter details from - https://cran.r-project.org/web/packages/neuralnet/neuralnet.pdf 
-# model4 = neuralnet(target~v1+v2, data = data_partial, 
-#                    algorithm = 'backprop', 
-#                    learningrate = 0.1, 
-#                    rep = 10, #repetitions for training
-#                    hidden = c(10), #vector of hidden layers
-#                    startweights = NULL, #random intialization
-#                    act.fct = 'logistic', 
-#                    linear.output = FALSE)
-# plot(model4)
-# 
-# end.time <- Sys.time()
-# time.taken <- end.time - start.time
-# print(paste('time ellapsed:', time.taken))
-```
-
-```{r}
-# testdata4 <- data.frame(v1 =data_m4_splits$inputsTest[, 1], v2 = data_m4_splits$inputsTest[, 2])
-# test_pred4 <- compute(model4, testdata4)
-# #convert results to binary
-# pred4 <- ifelse(test_pred4$net.result > 0.5, 1, 0) #round results from model to zero or one
-# resultsv1(data_m4_splits$targetsTest, pred4)
-```
+the boundary at .25 for the 10 layer NN has a rather low false negative ratio of 0.19
+#### Model 5: Random Forest Classification 
 
 model5, random forest classification
 ```{r}
 start.time <- Sys.time()
-#using library(randomForest) 
-data_v2_trim <- data_v2[sample(1:dim(data_v2)[1], size = round(0.15* dim(data_v2)[1])), ] #reduce to n percent of data for testing
-#data_v2_trim$y <- as.factor(data_v2_trim$y) #convert target variable to factor for RF
 
-inputs_v3 <- data.matrix(data_v2_trim[, 1:50])#exclude target column
-target_v3 <- data.matrix(data_v2_trim$y)
-data_v4 <- splitForTrainingAndTest(inputs_v3, target_v3, ratio = 0.3)
+data_v3_trim <- data_v3[sample(1:dim(data_v3)[1], size = round(0.10* dim(data_v3)[1])), ]
+train_index <- createDataPartition(data_v3_trim$y, p = 0.7, list = FALSE)
+train_v3 <- data_v3_trim[train_index, ]
+train_v3$y <- as.factor(train_v3$y)
+test_v3 <- data_v3_trim[-train_index, ]
+test_v3$y <- as.factor(test_v3$y)
 
-train_set_rf5 <- data.frame(data_v4$inputsTrain, as.factor(data_v4$targetsTrain))
-names(train_set_rf5) <- names(data_v2) #copy over col names
-test_set_rf5 <- data.frame(data_v4$inputsTest, as.factor(data_v4$targetsTest))
-names(test_set_rf5) <- names(data_v2) #copy over col names
-
-rf5 <- randomForest(y ~., data = test_set_rf5,
+rf5 <- randomForest(y ~., data = train_v3,
                     type = 'classification', 
                     proximity = TRUE, 
                     importance = TRUE)
@@ -374,16 +560,116 @@ time.taken <- end.time - start.time
 print(paste('time ellapsed:', time.taken))
 ```
 
+```{r}
+#costs from training set
+resultsv1(rf5$predicted, train_v3$y)
+```
+pretty good for training data on only 10% data, only 5% of the predicted negatives were false negatives
+
 apply random forest model to the test data
 ```{r}
-pred5 <- predict(rf5, newdata = test_set_rf5[, -51])
-resultsv1(as.factor(test_set_rf5[,51]), pred5)
+pred5 <- predict(rf5, newdata = test_v3)
+m5_results <- resultsv1(as.factor(test_v3$y), pred5)
+m5_results
+```
+Base random forest has a fairly high accuracy and low false positive rates, double the false negative rate from the training set through, 5% to 12% for testing set. still better than any of the MLP models
+
+#### Model 6 (SVM?)
+```{r}
+start.time <- Sys.time()
+#sample, scale, and split cleaned dataset into test and train sets 
+ data_v3_trim = (data_v3[sample(1:dim(data_v3)[1], size = round(0.15* dim(data_v3)[1])), ])
+ 
+ train_index <- createDataPartition(data_v3_trim$y, p = 0.7, list = FALSE)
+ train_v3 <- data_v3_trim[train_index, ]
+ train_v3$y <- as.factor(train_v3$y)
+ test_v3 <- data_v3_trim[-train_index, ]
+ test_v3$y <- as.factor(test_v3$y)
+
+#using package e1071
+model6 = svm(formula = y ~., 
+                 data = train_v3,
+                 type = 'C-classification',
+                 kernal = 'linear')
+
+pred6 <- predict(model6, newdata = test_v3[, -48])#exclude y from test data split
+
+m6_results <- resultsv1(test_v3$y, pred6)
+m6_results
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
+```
+#### Model 7 (GLM)
+```{r, results = 'hide'}
+start.time <- Sys.time()
+
+#also uses scaled data
+model7 <- glm(y ~., data = train_v3, family = 'binomial')
+summary(model7)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
 ```
 
-some data leakage, this shouldn't be 100%
+```{r}
+pred7 <- predict(model7, test_v3[, -48], type = 'response')
+boundary_seeker(pred7, test_v3[, 48])
+```
+```{r}
+test_pred <- ifelse(pred7 > 0.4, 1, 0) 
+m7_results <- resultsv1(test_v3$y, test_pred)
+show(m7_results)
+```
+20% false negative rate on test data, not too bad
+
+
+#### Model comparison
+```{r}
+#frame of accuracy and ratio of false negatives
+m_names <- c('MLR', 'NN1', 'NN2', 'NN3', 'NN4', 'NN5', 'RF1', 'SVM1', 'GLM1')
+acc_all <- c(m0_results[[1]]$overall[1], m1_results[[1]]$overall[1], m1.2_results[[1]]$overall[1], m2_results[[1]]$overall[1], m3_results[[1]]$overall[1], m4_results[[1]]$overall[1], m5_results[[1]]$overall[1], m6_results[[1]]$overall[1], m7_results[[1]]$overall[1])
+fn_ratio <- c(m0_results[[4]], m1_results[[4]], m1.2_results[[4]], m2_results[[4]], m3_results[[4]], m4_results[[4]], m5_results[[4]], m6_results[[4]], m7_results[[4]])
+fp_ratio <- c(m0_results[[5]], m1_results[[5]], m1.2_results[[5]], m2_results[[5]], m3_results[[5]], m4_results[[5]], m5_results[[5]], m6_results[[5]], m7_results[[5]])
+cframe <- data.frame('model' = m_names, 'accuracy' = acc_all, 'false_negative_rate' = fn_ratio, 'false_positive_rate' = fp_ratio, 'expected_cost' = (paste('$', format((fn_ratio * 10000 *500 + fp_ratio *10000 *10), big.mark = ','))))
+
+cframe
+```
+plain table, fancy it up later? 
+
+```{r}
+#table with kable extra
+cframe %>% mutate_if(is.numeric, function(x){
+  cell_spec(x, bold = T, 
+            color = spec_color(x, end = 0.9))
+}) %>% kable(escape = F, alight = 'c') %>% kable_styling(bootstrap_options = c('striped', 'hover', 'responsive'), full_width = F)
+```
+Higher values are brighter, we can see that the random forest model has high accuracy, low false positive and false negative rates, and the lowest estimated cost on a theoretical sample of 10,000 new rows. 
+(need to come back and conditionally format the highs and lows for the desirable values in each column)
+
+note convert strings to categorical check
+types of sampling? 
+normalization? kinda for some models
+cross validation? 
+
+types of models (have at least one linear and nonlinear approach)
+use regression as baseline? check
+NN
+RF (regression)
+RF (classification) - use this one to get a range of predictions from 0-1 and then set threshold as a method to control for class imbalance 
+SVM(class imbalance?)
+glm? (linear model) 
+
+need to consider how nonlinear models have different feature space than linear models, may have different results based on the nature of the data 
+
 
 
 note, store expected costs from model classifications for graphical comparison at the end?? 
+ viz ideas - 
+ fancy colored table for confusion matrix/price matrix 
+stacked bar chart for each model, number of type1/type2 errors and the total cost for 3 bars on each model
 
 
-
+full model might be too complex to ship as an rshiny app, instead isolate the 5-10 most important variables and build a simple model that does a rough approximation of the prediction and display predicted outcome with confidence
