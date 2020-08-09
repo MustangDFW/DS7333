@@ -600,6 +600,7 @@ m6_results
 end.time <- Sys.time()
 time.taken <- end.time - start.time
 print(paste('time ellapsed:', time.taken))
+#not sure why this usually needs a second run to function
 ```
 #### Model 7 (GLM)
 ```{r, results = 'hide'}
@@ -648,6 +649,35 @@ cframe %>% mutate_if(is.numeric, function(x){
 ```
 Higher values are brighter, we can see that the random forest model has high accuracy, low false positive and false negative rates, and the lowest estimated cost on a theoretical sample of 10,000 new rows. 
 (need to come back and conditionally format the highs and lows for the desirable values in each column)
+
+
+```{r}
+#model graph
+show(cframe)
+cframe2 <- cframe
+cp10 <- fn_ratio * 10000 *500 + fp_ratio *10000 *10 #expected costs per 10k rows
+cframe2$expected_cost <-  ((cp10-min(cp10)+(0.1*min(cp10))) / (max(cp10)-min(cp10))) #normalize costs from 0 to 1 to fit on scale
+cframe3 <- melt(cframe2, id = 1)
+show(cframe3)
+```
+```{r}
+ggplot(cframe3, aes(model, value))+
+  geom_bar(aes(fill = variable), stat = 'identity', position = 'dodge') +
+  #scale_fill_discrete(h = c(180, 360), c = 60, l = 50)+
+  scale_fill_manual(values = c('chartreuse4', 'steelblue4', 'gold3', 'indianred4'))+
+  ggtitle('Binary Classification Model Metrics', subtitle = 'Scaled Results')+
+  xlab('Model') + ylab('')
+```
+A bar chart with each model's accuracy, false negative rate, false positive rate, and expected costs per 10,000 rows. 
+Due to time and hardware contstraints, not every model was fed the same number of rows from the original dataset. To create meaningful comparison, ratios of various metrics are/were used instead of flat numbers, which would give the appearance of favorable results to models that had a lower number input cases. 
+
+Accuracy is from the number of correctly classified cases / total number of cases. False negative and false positive rates, or rate of type 2 and type 1 error, are the ratios of each error type relative to the total number of rows fed into the models. Expected costs are the expected numbers of type 2 and type 1 errors, multiplied by 10,000 theorhetical rows of new data, then each multiplied by 500 and 10 respectively to get an estimated cost per 10,000 rows of new data. 
+
+Note that expected_costs are scaled from 0.1 to 1.1 in order to fit the cost ratios on the same scale as the other metrics.
+
+Just another viz to show that RF has highest accuracy and lowest type1, type2, and expected cost ratios. 
+
+
 
 note convert strings to categorical check
 types of sampling? 
