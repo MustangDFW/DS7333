@@ -1,0 +1,315 @@
+---
+title: "**QTW FINAL CASE STUDY SUMMER 2020 - RF ONLY**"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 5
+---
+```{r message = FALSE}
+#data manipulation
+library(tidyverse)
+library(dplyr)
+library(data.table)
+#visualization
+library(ggplot2)
+library(skimr)
+library(corrplot)
+library(kableExtra)
+#prediction
+library(RSNNS) #older
+library(neuralnet) #newer
+library(randomForest)
+library(e1071)
+#analysis
+library(caret) #one hot encoding
+```
+#### Introduction
+
+data from - https://smu.box.com/s/k9x192jxm39enjw2wx8ouw2kopx33l32
+classify column 'y' using features x0-x49
+minimize cost on a theorhetical unknown dataset, where
+false positive = -10$
+false negative = -500$
+true positive/negative = -0$
+
+find a model to reasonably minimize cost
+
+include- 
+confusion plot 
+with costs average/predicted[ratio] as a model metric
+
+```{r}
+#file_name = file.choose()
+#data_raw = read.csv(file_name)
+data_raw = read.csv('D:/SMU/DS 7333 Quantify The World/qtw_final_project.csv')
+```
+
+#### EDA/Cleaning
+
+```{r, results = 'hide'}
+# #eda with skimr
+# skim(data_raw) %>% dplyr::select(skim_type, skim_variable, n_missing)
+# skim(data_raw) %>% dplyr::select(skim_type, skim_variable, numeric.mean)
+# #add additional skimr output here
+# skim(data_raw)
+```
+
+most columns look like they are missing a few, less than triple digits. Likely not significant next to the 160K total rows
+
+also note that the average value of y is 0.401, indicating only ~40% of rows have y = 1
+
+```{r}
+#remove rows with na
+data_v1 <- data_raw[complete.cases(data_raw), ]
+dim(data_v1)
+```
+from 160,000 to 158,534, removing all rows with NA loses 1,500 ish rows, or 0.9% of data
+
+```{r}
+#col 37 is dollar amounts stored as characters, need to convert
+data_v1$x37 <- as.numeric(substr(data_v1$x37, 2, nchar(data_v1$x37))) #index string with substring to cut out the dollar sign and convert to numeric 
+#same for col 32
+data_v1$x32 <- as.numeric(substr(data_v1$x32, 1, nchar(data_v1$x32)-1)) #same thing
+```
+ok, now we have numeric values for x37 instead of characters, run na removal again
+
+```{r}
+data_v1 <- data_v1[complete.cases(data_v1), ]
+dim(data_v1)
+```
+trims off another 70 rows, negligible (probably)
+
+### Categorical Encoding
+```{r}
+#looking at number of categorical variables in each non-numeric column 
+non_numeric_only <- data_v1[, !unlist(lapply(data_v1, is.numeric))] 
+
+for(i in 1:length(non_numeric_only)){
+  print(table(non_numeric_only[, i]))
+}
+```
+
+
+not too many labels to one hot encode
+```{r}
+#from caret
+dmy24 <- dummyVars(" ~ .", data = non_numeric_only)
+trsf24 <- data.frame(predict(dmy24, newdata = non_numeric_only))
+head(trsf24)
+
+```
+here dummy variables are created for each categorial value, adding 4 + 13 + 5 = 23 columns total
+regional values are blank, america, asia, 'euorpe'
+month values are blank + 12
+day of week values are blank + monday:friday 
+
+```{r}
+#add the columns to the actual dataset, drop the now redundant columns
+data_v3 <- data_v1[, unlist(lapply(data_v1, is.numeric))] #remove x24, 29, 30
+data_v3 <- cbind(data_v3, trsf24) #attach the one hot encoded data
+head(data_v3)
+```
+### correlation visualiazations
+```{r}
+library(ggcorrplot)
+#c1 <- round(cor(data_v3[, c(48, 66:71)]), 2)
+
+ggcorrplot(round(cor(data_v3[, (1:48)]), 2), hc.order = TRUE, 
+           type = 'lower', 
+           lab = TRUE, 
+           lab_size = 1, 
+           method = 'circle', 
+           colors = c('tomato2', 'white', 'springgreen3'), 
+           title = 'Correlogram of Encoded Weekdays', 
+           ggtheme = theme_bw)
+
+ggcorrplot(round(cor(data_v3[, c(48, 51:53)]), 2), hc.order = TRUE, 
+           type = 'lower', 
+           lab = TRUE, 
+           lab_size = 1, 
+           method = 'circle', 
+           colors = c('tomato2', 'white', 'springgreen3'), 
+           title = 'Correlogram of Encoded Weekdays', 
+           ggtheme = theme_bw)
+
+ggcorrplot(round(cor(data_v3[, c(48, 66:71)]), 2), hc.order = TRUE, 
+           type = 'lower', 
+           lab = TRUE, 
+           lab_size = 1, 
+           method = 'circle', 
+           colors = c('tomato2', 'white', 'springgreen3'), 
+           title = 'Correlogram of Encoded Weekdays', 
+           ggtheme = theme_bw)
+
+ggcorrplot(round(cor(data_v3[, c(48, 53:65)]), 2), hc.order = TRUE, 
+           type = 'lower', 
+           lab = TRUE, 
+           lab_size = 0.5, 
+           method = 'circle', 
+           colors = c('tomato2', 'white', 'springgreen3'), 
+           title = 'Correlogram of Encoded Months', 
+           ggtheme = theme_bw)
+
+
+```
+
+```{r}
+resultsv1 <- function(actual_values, predictions){
+  ctable <- table(actual_values, predictions)
+  cmat <- confusionMatrix(ctable)
+  #print(cmat)
+  #return(cmat)
+  d_out <- (ctable[2, 1]*500 + ctable[1, 2] *10)
+  s_output <- (paste('total cost of errors from model: $', format(d_out, big.mark = ',')))
+  fn_chance <- ctable[2, 1]/(ctable[1, 1]+ctable[2, 1]) #%of negative predictions that are false negatives
+  fp_chance <- ctable[1, 2]/(ctable[1, 2] + ctable[2, 2]) #%of positive predictions that are false positives
+  return(list(cmat, s_output, d_out, fn_chance, fp_chance))
+}
+```
+
+#### Model 5: Random Forest Classification 
+
+model5, random forest classification
+```{r}
+start.time <- Sys.time()
+
+data_v3_trim <- data_v3[sample(1:dim(data_v3)[1], size = round(0.10* dim(data_v3)[1])), ]
+train_index <- createDataPartition(data_v3_trim$y, p = 0.7, list = FALSE)
+train_v3 <- data_v3_trim[train_index, ]
+train_v3$y <- as.factor(train_v3$y)
+test_v3 <- data_v3_trim[-train_index, ]
+test_v3$y <- as.factor(test_v3$y)
+
+rf5 <- randomForest(y ~., data = train_v3,
+                    type = 'classification', 
+                    proximity = TRUE, 
+                    importance = TRUE)
+print(rf5)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
+```
+
+```{r}
+#costs from training set
+resultsv1(rf5$predicted, train_v3$y)
+```
+pretty good for training data on only 10% data, only 5% of the predicted negatives were false negatives
+
+apply random forest model to the test data
+```{r}
+pred5 <- predict(rf5, newdata = test_v3)
+m5_results <- resultsv1(as.factor(test_v3$y), pred5)
+m5_results
+```
+Base random forest has a fairly high accuracy and low false positive rates, double the false negative rate from the training set through, 5% to 12% for testing set. still better than the MLP models
+
+### Random Forest Feature Importance
+```{r}
+m5_importance <- as.data.frame(importance(rf5))
+head(m5_importance[order(-m5_importance[1]), ])
+head(m5_importance[order(-m5_importance[2]), ])
+head(m5_importance[order(-m5_importance[3]), ])
+head(m5_importance[order(-m5_importance[4]), ])
+```
+Variable importance from a Random Forest model is determined by looking at the prediction error rate for each variable at each 'fork' in the decision tree. the importance of that variable is calculated using the ratio of the number of times that variable lead to a desired classification. 
+
+Mean Decrease in Accuracy is a measure of how much the accuracy of a classification drops when that variable is *excluded* from the tree. Therefore variables with higher mean decrease accuracy are more important to the model. 
+
+A table of variable importance shows that x23, x48, and x20 were the strongest indicators/most important variables in making a '0' classification.  
+
+```{r}
+varImpPlot(rf5, type = 2)
+```
+
+Diverging Bar Graph
+```{r}
+m5_importance <- as.data.frame(importance(rf5))
+#head(m5_importance[order(-m5_importance[1]), ])
+#head(m5_importance[order(-m5_importance[2]), ])
+#head(m5_importance[order(m5_importance[3]), ])
+#head(m5_importance[order(-m5_importance[4]), ])
+#center importance weights on zero 
+m5_importance$z_gini <- round((m5_importance$MeanDecreaseGini - mean(m5_importance$MeanDecreaseGini))/sd(m5_importance$MeanDecreaseGini), 2)
+m5_importance$z_acc <- round((m5_importance$MeanDecreaseAccuracy - mean(m5_importance$MeanDecreaseAccuracy))/sd(m5_importance$MeanDecreaseAccuracy), 2)
+m5_importance$z_0 <- round((m5_importance$'0' - mean(m5_importance$'0'))/sd(m5_importance$'0'), 2)
+m5_importance$z_1 <- round((m5_importance$'1' - mean(m5_importance$'1'))/sd(m5_importance$'1'), 2)
+
+m5_importance$acc_type <- ifelse(m5_importance$z_acc < 0, 'below', 'above') #create category for entries over/under zero
+m5_importance <- m5_importance[order(-m5_importance[3]), ] #sort by accuracy
+m5_importance$var_name <- rownames(m5_importance) #create column with varnames 
+m5_importance$var_name <- factor(m5_importance$var_name, levels = m5_importance$var_name)
+
+
+v5 <- ggplot(m5_importance, aes(x = reorder(var_name, desc(var_name)), y = z_acc, label = 'Normalized Accuracy'))+
+  geom_bar(stat = 'identity', aes(fill = acc_type), width = 0.5) +
+  scale_fill_manual(name = 'Importance', 
+                    labels = c('Above Average', 'Below Average'), 
+                    values = c('above' = 'aquamarine4', 'below' = 'darkred')) +
+  ggtitle('Diverging Bars', subtitle = 'Normalized Accuracy') +
+  coord_flip() + 
+  theme(axis.text= element_text(size = 10))+
+  xlab('Variable ID') + ylab('Normalized Accuracy Influence')
+  
+show(v5)
+```
+
+```{r}
+ggsave(filename = 'v1_rf_importance.jpg', plot = v5, path = 'D:/SMU/DS 7333 Quantify The World')
+```
+Shows relative importance and weight for each of the variables with regards to accuracy and classification as a '0' or '1'
+Most of the variables aren't that important to the accuracy rating. Future 
+
+additional experiment - RF with less variables 
+
+```{r}
+data_v4 <- data_v3[, c('y', as.character(m5_importance$var_name[(m5_importance$acc_type == 'above')]))]
+head(data_v4)
+```
+
+run the same random forest but with only the variables that had a positive influence on the accuracy rating
+```{r}
+start.time <- Sys.time()
+
+data_v3_trim <- data_v4[sample(1:dim(data_v4)[1], size = round(0.10* dim(data_v4)[1])), ]
+train_index <- createDataPartition(data_v3_trim$y, p = 0.7, list = FALSE)
+train_v3 <- data_v3_trim[train_index, ]
+train_v3$y <- as.factor(train_v3$y)
+test_v3 <- data_v3_trim[-train_index, ]
+test_v3$y <- as.factor(test_v3$y)
+
+rf5 <- randomForest(y ~., data = train_v3,
+                    type = 'classification', 
+                    proximity = TRUE, 
+                    importance = TRUE)
+print(rf5)
+
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(paste('time ellapsed:', time.taken))
+```
+
+```{r}
+pred5 <- predict(rf5, newdata = test_v3)
+m5_results <- resultsv1(as.factor(test_v3$y), pred5)
+m5_results
+```
+
+
+And even better performance from the reduced variable inputs 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
